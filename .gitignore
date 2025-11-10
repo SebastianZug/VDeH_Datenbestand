@@ -1,0 +1,175 @@
+# Bibliographic Analysis Project - .gitignore
+
+# ===== DATEN AUSSCHLUSS =====
+# Alle Datenverzeichnisse
+data/
+# XML data files (but not config)
+*.xml
+# Large data files only in data directories
+data/**/*.csv
+data/**/*.parquet
+data/**/*.json
+data/**/*.tsv
+data/**/*.txt
+
+# Spezifische Datenordner
+/data/
+/raw_data/
+/processed_data/
+/exports/
+
+# ===== PYTHON =====
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# ===== JUPYTER NOTEBOOKS =====
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# Jupyter executed notebooks (optional - keep .ipynb but remove outputs)
+*-executed.ipynb
+executed_*.ipynb
+
+# ===== VS CODE =====
+.vscode/
+*.code-workspace
+
+# ===== SYSTEM FILES =====
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.tmp
+*.temp
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~
+
+# ===== PROJEKT-SPEZIFISCH =====
+# Temporäre Dateien
+temp/
+tmp/
+logs/
+*.log
+
+# Backup-Dateien
+*.bak
+*.backup
+*.orig
+
+# Konfigurationsdateien mit sensiblen Daten
+config_local.yaml
+secrets.yaml
+.secrets
+
+# Export-Verzeichnisse
+reports/
+output/
+results/
+
+# Large files (falls vorhanden)
+*.zip
+*.tar.gz
+*.rar
+
+# ===== PIPENV =====
+# Pipfile.lock sollte normalerweise committed werden, aber bei sensiblen Projekten:
+# Pipfile.lock
+
+# ===== DOKUMENTATION =====
+# Sphinx documentation
+docs/_build/
+
+# ===== ZUSÄTZLICHE AUSSCHLÜSSE =====
+# Alle XML-Dateien (VDEH-Daten)
+**/*.xml
+
+# Alle großen Datenexports
+**/*_dataset.*
+**/*_export.*
+**/*_processed.*
+
+# Visualisierungsoutputs
+**/*.png
+**/*.jpg
+**/*.jpeg
+**/*.pdf
+**/*.svg
+
+# Metadaten-Exports
+**/metadata.json
+**/report_*.json
+
+# Test-Samples
+**/sample_*.csv
+**/test_*.csv

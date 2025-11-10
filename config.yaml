@@ -1,0 +1,246 @@
+# =============================================================================
+# DUAL-SOURCE BIBLIOTHEK BESTANDSVERGLEICH - ZENTRALE KONFIGURATION
+# =============================================================================
+
+project:
+  name: "Dual-Source Bibliothek Bestandsvergleich"
+  version: "2.0.0"
+  description: "Vergleich zwischen VDEH-Neuerwerbungen und UB TUBAF-Bestand"
+  author: "Data Analysis Team"
+  created: "2024-10-31"
+  updated: "2024-10-31"
+
+# =============================================================================
+# MULTI-SOURCE DATENQUELLEN
+# =============================================================================
+data_sources:
+  # VDEH Neuerwerbungen (OAI-PMH XML)
+  vdeh:
+    type: "oai_pmh_xml"
+    description: "Neuerwerbungen der VDEH Bibliotheken"
+    path: "data/vdeh/raw/VDEH_mab_all.xml"
+    parser_module: "src/parsers/vdeh_parser.py"
+    parser_class: "VDEHParser"
+    encoding: "utf-8"
+    estimated_records: 58760
+    
+  # UB TUBAF Bestand (MAB2 Format)
+  ub_tubaf:
+    type: "mab2"
+    description: "Bestandsdaten der UB TU Bergakademie Freiberg"
+    path: "data/ub_tubaf/raw/027out.t"
+    parser_module: "src/parsers/mab2_parser.py"  
+    parser_class: "MAB2Parser"
+    encoding: "latin1"
+    estimated_records: null  # Unbekannt, wird beim Parsing ermittelt
+
+# =============================================================================
+# VERZEICHNIS-STRUKTUR (Multi-Source)
+# =============================================================================
+paths:
+  # Source Code Module
+  parsers_dir: "src/parsers"
+  comparison_dir: "src/comparison"
+  utils_dir: "src/utils"
+  
+  # Multi-Source Datenverzeichnisse
+  data:
+    root: "data"
+    # VDEH Verzeichnisse
+    vdeh:
+      root: "data/vdeh"
+      raw: "data/vdeh/raw"
+      processed: "data/vdeh/processed"
+      exports: "data/vdeh/exports"
+    # UB TUBAF Verzeichnisse  
+    ub_tubaf:
+      root: "data/ub_tubaf"
+      raw: "data/ub_tubaf/raw"
+      processed: "data/ub_tubaf/processed"
+      exports: "data/ub_tubaf/exports"
+    # Vergleichsverzeichnisse
+    comparison:
+      root: "data/comparison"
+      matches: "data/comparison/matches"
+      gaps: "data/comparison/gaps"
+      reports: "data/comparison/reports"
+  
+  # Notebook-Workflows
+  notebooks:
+    individual_analysis: "notebooks/01_individual_analysis"
+    preprocessing: "notebooks/02_preprocessing"  
+    comparison: "notebooks/03_comparison"
+  
+  # Legacy-Pfade (Rückwärtskompatibilität)
+  results: "data/comparison/reports"
+  figures: "data/comparison/reports/figures"
+  exports: "data/comparison/reports/exports"
+
+# =====================================
+# DATENVERARBEITUNG
+# =====================================
+
+data_processing:
+  # VDEH XML-Parser Einstellungen
+  vdeh_parser:
+    max_records: null  # null = alle Records, oder Zahl für Testläufe
+    namespace: "http://www.openarchives.org/OAI/2.0/"
+    encoding: "utf-8"
+    
+  # MAB2-Parser Einstellungen
+  mab2_parser:
+    max_records: null
+    encoding: "latin1"  # Typisch für deutsche Bibliotheksdaten
+    record_separator: "###"
+    field_separator: "\r\n"
+    
+  # DataFrame-Optimierungen (für beide Quellen)
+  dataframe:
+    year_dtype: "Int64"  # Nullable Integer für Jahre
+    memory_optimization: true
+    
+  # Sprach-Erkennung (für beide Quellen)
+  language_detection:
+    min_text_length: 10
+    confidence_threshold: 0.5
+    supported_languages:
+      - de: "German"
+      - en: "English" 
+      - fr: "French"
+      - es: "Spanish"
+      - it: "Italian"
+      - nl: "Dutch"
+      - pt: "Portuguese"
+      - ru: "Russian"
+      - pl: "Polish"
+      - cs: "Czech"
+    
+# =====================================
+# ANALYSE-PARAMETER
+# =====================================
+
+# =====================================
+# BESTANDSVERGLEICH KONFIGURATION
+# =====================================
+
+comparison:
+  # Matching-Strategien (Reihenfolge nach Priorität)
+  matching_strategies:
+    - "isbn_exact"           # Exakte ISBN-Übereinstimmung
+    - "isbn_normalized"      # Normalisierte ISBN (mit/ohne Bindestriche)
+    - "title_exact"          # Exakter Titel-Match
+    - "title_fuzzy"          # Ähnlichkeits-basierter Titel-Match
+    - "author_title_combo"   # Kombination Autor + Titel
+    
+  # Similarity-Schwellenwerte
+  similarity_thresholds:
+    title_fuzzy: 0.85        # 85% Ähnlichkeit für Titel
+    author_fuzzy: 0.90       # 90% Ähnlichkeit für Autoren
+    combined_threshold: 0.80 # Kombinierte Bewertung
+    
+  # Text-Normalisierung
+  text_normalization:
+    remove_punctuation: true
+    lowercase: true
+    remove_articles: true    # "Der", "Die", "Das", "The", etc.
+    remove_stopwords: true
+    
+  # Match-Qualität
+  match_quality_levels:
+    high_confidence: 0.95
+    medium_confidence: 0.75
+    low_confidence: 0.50
+
+analysis:
+  # Stichproben-Größen (pro Datenquelle)
+  sample_sizes:
+    quick_test: 1000
+    medium_test: 5000
+    demo_records: 10
+    comparison_sample: 500   # Für Test-Vergleiche
+  
+  # Qualitäts-Filter (für beide Quellen)
+  quality_filters:
+    min_title_length: 5
+    min_confidence_score: 0.3
+    exclude_unknown_language: false
+    require_isbn: false      # Falls true, nur Records mit ISBN
+    require_author: false    # Falls true, nur Records mit Autor
+  
+  # Zeitraum-Filter
+  time_filters:
+    min_year: 1800
+    max_year: 2030
+    default_decade_start: 1900
+    focus_recent_years: 10   # Fokus auf letzten N Jahre
+    
+# =====================================
+# VISUALISIERUNG
+# =====================================
+
+visualization:
+  # Plot-Einstellungen
+  matplotlib:
+    figure_size: [12, 8]
+    dpi: 300
+    style: "seaborn-v0_8"
+    color_palette: ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd"]
+  
+  # Output-Formate
+  export_formats: ["png", "pdf", "svg"]
+  
+# =====================================
+# PERFORMANCE
+# =====================================
+
+performance:
+  # Parallel Processing
+  n_jobs: -1  # -1 = alle CPU-Kerne
+  chunk_size: 1000
+  
+  # Memory Management
+  low_memory_mode: false
+  progress_bars: true
+  
+# =====================================
+# LOGGING UND DEBUG
+# =====================================
+
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  # Separate Log-Dateien für verschiedene Module
+  files:
+    main: "logs/dual_source_analysis.log"
+    vdeh_parser: "logs/vdeh_parser.log"
+    mab2_parser: "logs/mab2_parser.log"
+    comparison: "logs/comparison.log"
+  
+debug:
+  verbose_output: true
+  save_intermediate_results: true  # Wichtig für Debug bei Vergleichen
+  profile_performance: false
+  
+# =====================================
+# REPORT-GENERIERUNG
+# =====================================
+
+reporting:
+  # Standard-Reports
+  generate_reports:
+    individual_summaries: true    # Einzelne Datenquellen-Reports
+    comparison_overview: true     # Vergleichs-Übersicht
+    match_details: true          # Detaillierte Match-Analyse
+    gap_analysis: true           # Lücken-Analyse
+    
+  # Export-Formate
+  export_formats:
+    summary: ["html", "pdf"]
+    detailed: ["csv", "excel"]
+    figures: ["png", "pdf"]
+    
+  # Template-Einstellungen
+  templates:
+    use_custom_css: true
+    include_charts: true
+    max_records_in_report: 1000
