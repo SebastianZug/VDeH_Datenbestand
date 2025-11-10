@@ -8,6 +8,10 @@ import requests
 import xml.etree.ElementTree as ET
 from typing import Dict, Optional
 import re
+import logging
+
+# Configure logger for this module
+logger = logging.getLogger(__name__)
 
 
 # DNB SRU API Basis-URL
@@ -106,7 +110,7 @@ def _query_dnb_sru(query: str, max_records: int = 1, identifier_type: str = None
         return metadata
 
     except Exception as e:
-        print(f"   ⚠️ DNB query error for '{query}': {str(e)}")
+        logger.warning(f"DNB query error for '{query}': {str(e)}")
         return None
 
 

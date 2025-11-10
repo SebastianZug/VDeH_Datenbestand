@@ -11,6 +11,10 @@ import os
 from pathlib import Path
 from typing import Dict, Any, Optional
 import warnings
+import logging
+
+# Configure logger for this module
+logger = logging.getLogger(__name__)
 
 class VDEHConfig:
     """Zentrale Konfigurationsklasse für das VDEH-Projekt"""
@@ -51,7 +55,7 @@ class VDEHConfig:
         try:
             with open(self.config_path, 'r', encoding='utf-8') as file:
                 config = yaml.safe_load(file)
-            print(f"✅ Konfiguration geladen: {self.config_path}")
+            logger.info(f"Configuration loaded from {self.config_path}")
             return config
         except Exception as e:
             raise RuntimeError(f"Fehler beim Laden der Konfiguration: {e}")
@@ -131,22 +135,19 @@ class VDEHConfig:
             if not dir_path.exists():
                 dir_path.mkdir(parents=True, exist_ok=True)
                 created.append(str(dir_path))
-        
+
         if created:
-            print(f"📁 Verzeichnisse erstellt: {len(created)}")
-            for d in created:
-                print(f"   - {d}")
+            logger.info(f"Created {len(created)} directories: {', '.join(created)}")
     
     def print_summary(self):
         """Gibt eine Übersicht der Konfiguration aus"""
-        print("🎯 === VDEH PROJEKT KONFIGURATION ===")
-        print(f"📁 Projekt: {self.config['project']['name']} v{self.config['project']['version']}")
-        print(f"📂 Root: {self.project_root}")
-        print(f"📄 Config: {self.config_path}")
-        print(f"📊 XML Quelle: {self.get_path('xml_source')}")
-        print(f"🔧 Parser: {self.get_path('parser_module')}")
-        print(f"💾 Max Records: {self.get('data_processing.xml_parser.max_records') or 'Alle'}")
-        print()
+        logger.info("=== VDEH PROJECT CONFIGURATION ===")
+        logger.info(f"Project: {self.config['project']['name']} v{self.config['project']['version']}")
+        logger.info(f"Root: {self.project_root}")
+        logger.info(f"Config: {self.config_path}")
+        logger.info(f"XML Source: {self.get_path('xml_source')}")
+        logger.info(f"Parser: {self.get_path('parser_module')}")
+        logger.info(f"Max Records: {self.get('data_processing.xml_parser.max_records') or 'All'}")
 
 def load_config(config_path: Optional[str] = None) -> VDEHConfig:
     """

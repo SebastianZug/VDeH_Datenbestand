@@ -18,7 +18,11 @@ import pandas as pd
 import xml.etree.ElementTree as ET
 import re
 import os
+import logging
 from typing import Optional, List, Dict, Any
+
+# Configure logger for this module
+logger = logging.getLogger(__name__)
 
 
 def _get_field(document: ET.Element, ns: Dict[str, str], tag: str, code: Optional[str] = None) -> Optional[str]:
@@ -71,10 +75,9 @@ def parse_bibliography(file_path: str, max_records: Optional[int] = None) -> pd.
     
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"XML-Datei nicht gefunden: {file_path}")
-    
-    print("🚀 Starte robusten Parser für bibliographische Grunddaten...")
-    print(f"📁 Datei: {file_path}")
-    print(f"📊 Dateigröße: {os.path.getsize(file_path) / (1024*1024):.1f} MB")
+
+    file_size_mb = os.path.getsize(file_path) / (1024*1024)
+    logger.info(f"Starting parser for bibliographic data from {file_path} ({file_size_mb:.1f} MB)")
     
     # OAI-PMH Namespace
     ns = {"oai": "http://www.openarchives.org/OAI/2.0/"}
@@ -89,7 +92,7 @@ def parse_bibliography(file_path: str, max_records: Optional[int] = None) -> pd.
         # Alle <record> im OAI-namespace finden
         oai_records = root.findall(".//oai:record", ns)
         total_records = len(oai_records)
-        print(f"📚 Gefunden: {total_records:,} OAI-Records")
+        logger.info(f"Found {total_records:,} OAI records")
         
         for idx, record_elem in enumerate(oai_records):
             if max_records and record_count >= max_records:
@@ -98,11 +101,11 @@ def parse_bibliography(file_path: str, max_records: Optional[int] = None) -> pd.
             record = _extract_basic_record_data(record_elem, ns, record_count)
             records.append(record)
             record_count += 1
-            
+
             if record_count % 5000 == 0:
-                print(f"📝 Verarbeitet: {record_count:,} Records")
-        
-        print(f"✅ {record_count:,} Records verarbeitet")
+                logger.info(f"Processed {record_count:,} records")
+
+        logger.info(f"Successfully processed {record_count:,} records")
         
     except Exception as e:
         raise Exception(f"Fehler beim Parsen der XML-Datei: {str(e)}")
@@ -117,12 +120,10 @@ def parse_bibliography(file_path: str, max_records: Optional[int] = None) -> pd.
     # Affiliations-Strings (Institutionen/Herausgeber)
     df['authors_affiliation_str'] = df['authors_affiliation'].apply(lambda x: ' | '.join(x) if x else '')
     df['num_authors_affiliation'] = df['authors_affiliation'].apply(len)
-    
-    print(f"🎯 DataFrame erstellt:")
-    print(f"   📊 {len(df):,} Zeilen")
-    print(f"   📋 {len(df.columns):,} Spalten")
-    print(f"   💾 {df.memory_usage(deep=True).sum() / 1024**2:.1f} MB")
-    
+
+    memory_mb = df.memory_usage(deep=True).sum() / 1024**2
+    logger.info(f"DataFrame created: {len(df):,} rows, {len(df.columns)} columns, {memory_mb:.1f} MB")
+
     return df
 
 
@@ -391,12 +392,12 @@ def _format_issn(issn: str) -> str:
 def analyze_bibliography_data(df: pd.DataFrame) -> None:
     """
     Führt eine Analyse der bibliographischen Daten durch.
-    
+
     Args:
         df: DataFrame mit bibliographischen Daten
     """
-    print("\n📊 === BIBLIOGRAPHISCHE DATEN ANALYSE ===")
-    
+    logger.info("=== BIBLIOGRAPHIC DATA ANALYSIS ===")
+
     total = len(df)
     with_title = df['title'].notna().sum()
     with_authors = df['num_authors'].gt(0).sum()
@@ -405,33 +406,33 @@ def analyze_bibliography_data(df: pd.DataFrame) -> None:
     with_isbn = df['isbn'].notna().sum()
     with_issn = df['issn'].notna().sum() if 'issn' in df.columns else 0
     complete = df[(df['title'].notna()) & (df['year'].notna()) & (df['num_authors'] > 0)].shape[0]
-    
-    print(f"📚 Gesamt Records: {total:,}")
-    print(f"📋 Mit Titel: {with_title:,} ({with_title/total*100:.1f}%)")
-    print(f"👤 Mit Autoren: {with_authors:,} ({with_authors/total*100:.1f}%)")
-    print(f"📅 Mit Jahr: {with_year:,} ({with_year/total*100:.1f}%)")
+
+    logger.info(f"Total records: {total:,}")
+    logger.info(f"With title: {with_title:,} ({with_title/total*100:.1f}%)")
+    logger.info(f"With authors: {with_authors:,} ({with_authors/total*100:.1f}%)")
+    logger.info(f"With year: {with_year:,} ({with_year/total*100:.1f}%)")
     if with_publisher > 0:
-        print(f"🏢 Mit Verlag: {with_publisher:,} ({with_publisher/total*100:.1f}%)")
-    print(f"📖 Mit ISBN: {with_isbn:,} ({with_isbn/total*100:.1f}%)")
+        logger.info(f"With publisher: {with_publisher:,} ({with_publisher/total*100:.1f}%)")
+    logger.info(f"With ISBN: {with_isbn:,} ({with_isbn/total*100:.1f}%)")
     if with_issn > 0:
-        print(f"📰 Mit ISSN: {with_issn:,} ({with_issn/total*100:.1f}%)")
-    print(f"✅ Vollständig: {complete:,} ({complete/total*100:.1f}%)")
-    
+        logger.info(f"With ISSN: {with_issn:,} ({with_issn/total*100:.1f}%)")
+    logger.info(f"Complete records: {complete:,} ({complete/total*100:.1f}%)")
+
     # Zeitspanne
     years = df['year'].dropna()
     if len(years) > 0:
-        print(f"📅 Zeitspanne: {int(years.min())} - {int(years.max())}")
-        print(f"📊 Median-Jahr: {int(years.median())}")
-    
+        logger.info(f"Year range: {int(years.min())} - {int(years.max())}")
+        logger.info(f"Median year: {int(years.median())}")
+
     # Autoren-Statistik
     all_authors = []
     for authors_list in df['authors']:
         if authors_list:
             all_authors.extend(authors_list)
-    
+
     if all_authors:
         unique_authors = len(set(all_authors))
-        print(f"👥 Einzigartige Autoren: {unique_authors:,}")
+        logger.info(f"Unique authors: {unique_authors:,}")
 
 
 def get_sample_records(df: pd.DataFrame, n: int = 5) -> pd.DataFrame:
