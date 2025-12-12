@@ -2,16 +2,61 @@
 DNB API Client für bibliografische Metadaten-Abfragen.
 
 Deutsche Nationalbibliothek SRU API Client mit ISBN/ISSN-basierter Suche.
+Inkl. automatischer Retry-Logik mit Exponential Backoff.
 """
 
 import requests
 import xml.etree.ElementTree as ET
-from typing import Dict, Optional
+from typing import Dict, Optional, Callable
 import re
 import logging
+import time
 
 # Configure logger for this module
 logger = logging.getLogger(__name__)
+
+
+def _retry_with_backoff(func: Callable, max_retries: int = 3, base_delay: float = 2.0, query_desc: str = "query") -> Optional[Dict]:
+    """
+    Führt eine Funktion mit Exponential Backoff bei Fehlern aus.
+
+    Args:
+        func: Funktion, die ausgeführt werden soll (ohne Parameter)
+        max_retries: Maximale Anzahl an Versuchen
+        base_delay: Basis-Verzögerung in Sekunden für Backoff
+        query_desc: Beschreibung der Query für Logging
+
+    Returns:
+        Ergebnis der Funktion oder None bei dauerhaftem Fehler
+    """
+    last_exception = None
+
+    for attempt in range(max_retries):
+        try:
+            result = func()
+
+            # Erfolg beim ersten Versuch
+            if attempt == 0:
+                return result
+
+            # Erfolg nach Retry
+            logger.info(f"Query '{query_desc}' erfolgreich nach {attempt + 1} Versuchen")
+            return result
+
+        except Exception as e:
+            last_exception = e
+
+            # Letzter Versuch fehlgeschlagen
+            if attempt >= max_retries - 1:
+                logger.error(f"Query '{query_desc}' fehlgeschlagen nach {max_retries} Versuchen: {str(e)}")
+                return None
+
+            # Exponential Backoff
+            delay = base_delay * (2 ** attempt)
+            logger.warning(f"Query '{query_desc}' Versuch {attempt + 1}/{max_retries} fehlgeschlagen: {str(e)[:100]}. Retry in {delay}s...")
+            time.sleep(delay)
+
+    return None
 
 
 # DNB SRU API Basis-URL
@@ -64,10 +109,13 @@ def _query_dnb_sru(query: str, max_records: int = 1, identifier_type: str = None
             'title': None,
             'authors': [],
             'year': None,
-            'publisher': None
+            'publisher': None,
+            'isbn': None,
+            'issn': None,
+            'pages': None
         }
 
-        # Add identifier if provided
+        # Add identifier if provided (from query parameter)
         if identifier_type and identifier_value:
             metadata[identifier_type] = identifier_value
 
@@ -75,8 +123,35 @@ def _query_dnb_sru(query: str, max_records: int = 1, identifier_type: str = None
         for datafield in record.findall('marc:datafield', MARC_NAMESPACES):
             tag = datafield.get('tag')
 
+            # ISBN (020)
+            if tag == '020' and not metadata.get('isbn'):
+                subfields = datafield.findall('marc:subfield[@code="a"]', MARC_NAMESPACES)
+                if subfields and subfields[0].text:
+                    # Extract ISBN (may contain additional text like binding info)
+                    isbn_text = subfields[0].text.strip()
+                    # Clean: remove everything after space or parenthesis
+                    isbn_clean = re.split(r'[\s(]', isbn_text)[0]
+                    # Remove hyphens for normalized storage
+                    isbn_clean = isbn_clean.replace('-', '')
+                    # Validate basic ISBN format (10 or 13 digits)
+                    if re.match(r'^\d{10}(\d{3})?$', isbn_clean):
+                        metadata['isbn'] = isbn_clean
+
+            # ISSN (022)
+            elif tag == '022' and not metadata.get('issn'):
+                subfields = datafield.findall('marc:subfield[@code="a"]', MARC_NAMESPACES)
+                if subfields and subfields[0].text:
+                    issn_text = subfields[0].text.strip()
+                    # Clean: remove everything after space
+                    issn_clean = re.split(r'\s', issn_text)[0]
+                    # Remove hyphens for normalized storage
+                    issn_clean = issn_clean.replace('-', '')
+                    # Validate basic ISSN format (8 digits)
+                    if re.match(r'^\d{7}[\dXx]$', issn_clean):
+                        metadata['issn'] = issn_clean.upper()
+
             # Title (245)
-            if tag == '245':
+            elif tag == '245':
                 subfields = datafield.findall('marc:subfield[@code="a"]', MARC_NAMESPACES)
                 if subfields:
                     metadata['title'] = subfields[0].text
@@ -107,6 +182,13 @@ def _query_dnb_sru(query: str, max_records: int = 1, identifier_type: str = None
                 if subfields_publisher and subfields_publisher[0].text:
                     metadata['publisher'] = subfields_publisher[0].text
 
+            # Pages (300 - Physical Description)
+            elif tag == '300':
+                # Pages from subfield 'a' (e.g., "188 S.", "XV, 250 p.")
+                subfields_pages = datafield.findall('marc:subfield[@code="a"]', MARC_NAMESPACES)
+                if subfields_pages and subfields_pages[0].text:
+                    metadata['pages'] = subfields_pages[0].text.strip()
+
         return metadata
 
     except Exception as e:
@@ -114,13 +196,14 @@ def _query_dnb_sru(query: str, max_records: int = 1, identifier_type: str = None
         return None
 
 
-def query_dnb_by_isbn(isbn: str, max_records: int = 1) -> Optional[Dict]:
+def query_dnb_by_isbn(isbn: str, max_records: int = 1, max_retries: int = 3) -> Optional[Dict]:
     """
-    Fragt DNB API mit ISBN ab.
+    Fragt DNB API mit ISBN ab (mit automatischer Retry-Logik).
 
     Args:
         isbn: ISBN-Nummer (mit oder ohne Bindestriche)
         max_records: Max. Anzahl Ergebnisse
+        max_retries: Maximale Anzahl an Retry-Versuchen bei Fehlern (default: 3)
 
     Returns:
         Dict mit Metadaten oder None bei Fehler/Nicht-Gefunden
@@ -136,16 +219,22 @@ def query_dnb_by_isbn(isbn: str, max_records: int = 1) -> Optional[Dict]:
     # SRU Query erstellen
     query = f'isbn={isbn_clean}'
 
-    return _query_dnb_sru(query, max_records, identifier_type='isbn', identifier_value=isbn_clean)
+    # Query mit Retry-Logik ausführen
+    return _retry_with_backoff(
+        func=lambda: _query_dnb_sru(query, max_records, identifier_type='isbn', identifier_value=isbn_clean),
+        max_retries=max_retries,
+        query_desc=f"ISBN {isbn_clean}"
+    )
 
 
-def query_dnb_by_issn(issn: str, max_records: int = 1) -> Optional[Dict]:
+def query_dnb_by_issn(issn: str, max_records: int = 1, max_retries: int = 3) -> Optional[Dict]:
     """
-    Fragt DNB API mit ISSN ab.
+    Fragt DNB API mit ISSN ab (mit automatischer Retry-Logik).
 
     Args:
         issn: ISSN-Nummer (mit oder ohne Bindestriche)
         max_records: Max. Anzahl Ergebnisse
+        max_retries: Maximale Anzahl an Retry-Versuchen bei Fehlern (default: 3)
 
     Returns:
         Dict mit Metadaten oder None bei Fehler/Nicht-Gefunden
@@ -161,17 +250,27 @@ def query_dnb_by_issn(issn: str, max_records: int = 1) -> Optional[Dict]:
     # SRU Query
     query = f'issn={issn_clean}'
 
-    return _query_dnb_sru(query, max_records, identifier_type='issn', identifier_value=issn_clean)
+    # Query mit Retry-Logik ausführen
+    return _retry_with_backoff(
+        func=lambda: _query_dnb_sru(query, max_records, identifier_type='issn', identifier_value=issn_clean),
+        max_retries=max_retries,
+        query_desc=f"ISSN {issn_clean}"
+    )
 
 
-def query_dnb_by_title_author(title: str, author: str = None, max_records: int = 1) -> Optional[Dict]:
+def query_dnb_by_title_author(title: str, author: str = None, max_records: int = 1, max_retries: int = 3) -> Optional[Dict]:
     """
-    Fragt DNB API mit Titel und optional Autor ab.
+    Fragt DNB API mit Titel und optional Autor ab (mit automatischer Retry-Logik).
+
+    Verwendet eine mehrstufige Suchstrategie:
+    1. Titel + Autor (wenn Autor vorhanden)
+    2. Nur Titel (Fallback)
 
     Args:
         title: Titel des Werks
         author: Autor (optional, verbessert die Präzision)
         max_records: Max. Anzahl Ergebnisse
+        max_retries: Maximale Anzahl an Retry-Versuchen bei Fehlern (default: 3)
 
     Returns:
         Dict mit Metadaten oder None bei Fehler/Nicht-Gefunden
@@ -181,12 +280,115 @@ def query_dnb_by_title_author(title: str, author: str = None, max_records: int =
         >>> if data:
         ...     print(data['title'])
     """
-    # Query erstellen (CQL Syntax)
-    if author:
-        # Extrahiere nur ersten Autor (falls mehrere vorhanden)
-        first_author = author.split(';')[0].split(',')[0].strip()
-        query = f'tit={title} and per={first_author}'
-    else:
-        query = f'tit={title}'
+    # Bereinige Titel von Sonderzeichen
+    title_clean = title.replace('¬', '').strip()
 
-    return _query_dnb_sru(query, max_records)
+    # Erstelle eine Funktion, die alle Suchstrategien durchläuft
+    def _try_all_strategies():
+        # Strategie 1: Titel + Autor (wenn vorhanden)
+        if author:
+            # Extrahiere nur ersten Autor und nur Nachname
+            # Format kann sein: "Nachname, Vorname" oder "Nachname"
+            first_author = author.split('|')[0].split(';')[0].strip()
+            # Nehme nur Text vor dem Komma (Nachname)
+            author_lastname = first_author.split(',')[0].strip()
+
+            # Versuche mit Autor
+            query = f'tit="{title_clean}" and per={author_lastname}'
+            result = _query_dnb_sru(query, max_records)
+
+            if result:
+                return result
+
+            # Fallback: Titel ohne Anführungszeichen + Autor
+            query = f'tit={title_clean} and per={author_lastname}'
+            result = _query_dnb_sru(query, max_records)
+
+            if result:
+                return result
+
+        # Strategie 2: Nur Titel (Fallback wenn Autor fehlschlägt oder nicht vorhanden)
+        # Verwende Phrasensuche mit Anführungszeichen für bessere Präzision
+        query = f'tit="{title_clean}"'
+        result = _query_dnb_sru(query, max_records)
+
+        if result:
+            return result
+
+        # Strategie 3: Titel ohne Anführungszeichen (größere Toleranz)
+        query = f'tit={title_clean}'
+        return _query_dnb_sru(query, max_records)
+
+    # Query mit Retry-Logik ausführen
+    query_desc = f"Title/Author '{title_clean[:50]}'"
+    if author:
+        query_desc += f" / {author.split('|')[0].split(';')[0].strip()[:30]}"
+
+    return _retry_with_backoff(
+        func=_try_all_strategies,
+        max_retries=max_retries,
+        query_desc=query_desc
+    )
+
+
+def query_dnb_by_title_year(title: str, year: int, max_records: int = 1, max_retries: int = 3) -> Optional[Dict]:
+    """
+    Fragt DNB API mit Titel und Jahr ab (mit automatischer Retry-Logik).
+
+    Neue Suchmethode für Records ohne ISBN/ISSN aber mit Titel und Jahr.
+    Verwendet eine mehrstufige Suchstrategie mit verschiedenen Jahr-Toleranzen.
+
+    Args:
+        title: Titel des Werks
+        year: Erscheinungsjahr (4-stellig)
+        max_records: Max. Anzahl Ergebnisse
+        max_retries: Maximale Anzahl an Retry-Versuchen bei Fehlern
+
+    Returns:
+        Dict mit Metadaten oder None bei Fehler/Nicht-Gefunden
+
+    Example:
+        >>> data = query_dnb_by_title_year('Die Verwandlung', 1915)
+        >>> if data:
+        ...     print(data['title'])
+    """
+    # Titel bereinigen
+    title_clean = title.replace('¬', '').strip()
+
+    # Jahr validieren
+    if not isinstance(year, (int, float)) or year < 1000 or year > 2100:
+        return None
+
+    year_int = int(year)
+
+    # Erstelle eine Funktion, die alle Suchstrategien durchläuft
+    def _try_all_strategies():
+        # Strategie 1: Exakter Titel (mit Anführungszeichen) + exaktes Jahr
+        query = f'tit="{title_clean}" and jhr={year_int}'
+        result = _query_dnb_sru(query, max_records)
+        if result:
+            return result
+
+        # Strategie 2: Titel ohne Anführungszeichen + exaktes Jahr (breitere Suche)
+        query = f'tit={title_clean} and jhr={year_int}'
+        result = _query_dnb_sru(query, max_records)
+        if result:
+            return result
+
+        # Strategie 3: Exakter Titel + Jahr-Range ±1 (für Publikationsvarianten)
+        # Beispiel: Erstauflage 1915, Neuauflage 1916
+        query = f'tit="{title_clean}" and jhr>={year_int-1} and jhr<={year_int+1}'
+        result = _query_dnb_sru(query, max_records)
+        if result:
+            return result
+
+        # Strategie 4: Titel ohne Anführungszeichen + Jahr-Range ±1
+        query = f'tit={title_clean} and jhr>={year_int-1} and jhr<={year_int+1}'
+        return _query_dnb_sru(query, max_records)
+
+    # Query mit Retry-Logik ausführen
+    return _retry_with_backoff(
+        func=_try_all_strategies,
+        max_retries=max_retries,
+        query_desc=f"Title/Year: '{title_clean[:40]}...' ({year_int})"
+    )

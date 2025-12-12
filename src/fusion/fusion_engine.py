@@ -26,10 +26,12 @@ class FusionResult:
         authors: Optional[str] = None,
         year: Optional[int] = None,
         publisher: Optional[str] = None,
+        pages: Optional[str] = None,
         title_source: Optional[str] = None,
         authors_source: Optional[str] = None,
         year_source: Optional[str] = None,
         publisher_source: Optional[str] = None,
+        pages_source: Optional[str] = None,
         conflicts: Optional[str] = None,
         confirmations: Optional[str] = None,
         ai_reasoning: Optional[str] = None,
@@ -41,10 +43,12 @@ class FusionResult:
         self.authors = authors
         self.year = year
         self.publisher = publisher
+        self.pages = pages
         self.title_source = title_source
         self.authors_source = authors_source
         self.year_source = year_source
         self.publisher_source = publisher_source
+        self.pages_source = pages_source
         self.conflicts = conflicts
         self.confirmations = confirmations
         self.ai_reasoning = ai_reasoning
@@ -59,10 +63,12 @@ class FusionResult:
             'authors': self.authors,
             'year': self.year,
             'publisher': self.publisher,
+            'pages': self.pages,
             'title_source': self.title_source,
             'authors_source': self.authors_source,
             'year_source': self.year_source,
             'publisher_source': self.publisher_source,
+            'pages_source': self.pages_source,
             'conflicts': self.conflicts,
             'confirmations': self.confirmations,
             'ai_reasoning': self.ai_reasoning,
@@ -185,7 +191,8 @@ A&B - [Begründung warum beide gleich gut sind, ID bevorzugt]"""
             'title': row.get('title'),
             'authors': row.get('authors_str'),
             'year': row.get('year'),
-            'publisher': row.get('publisher')
+            'publisher': row.get('publisher'),
+            'pages': row.get('pages')
         }
 
         # Extract DNB variants
@@ -193,39 +200,83 @@ A&B - [Begründung warum beide gleich gut sind, ID bevorzugt]"""
             'title': row.get('dnb_title'),
             'authors': row.get('dnb_authors'),
             'year': row.get('dnb_year'),
-            'publisher': row.get('dnb_publisher')
+            'publisher': row.get('dnb_publisher'),
+            'pages': row.get('dnb_pages')
         }
 
         dnb_ta = {
             'title': row.get('dnb_title_ta'),
             'authors': row.get('dnb_authors_ta'),
             'year': row.get('dnb_year_ta'),
-            'publisher': row.get('dnb_publisher_ta')
+            'publisher': row.get('dnb_publisher_ta'),
+            'pages': row.get('dnb_pages_ta')
+        }
+
+        # Extract DNB Title/Year variant (NEW - Fallback for records without ISBN/ISSN/Authors)
+        dnb_ty = {
+            'title': row.get('dnb_title_ty'),
+            'authors': row.get('dnb_authors_ty'),
+            'year': row.get('dnb_year_ty'),
+            'publisher': row.get('dnb_publisher_ty'),
+            'pages': row.get('dnb_pages_ty')
         }
 
         # Check if variants are actually available
         id_available = any(pd.notna(dnb_id[f]) for f in dnb_id)
         ta_available = any(pd.notna(dnb_ta[f]) for f in dnb_ta)
+        ty_available = any(pd.notna(dnb_ty[f]) for f in dnb_ty)
 
         if not id_available:
             dnb_id = None
         if not ta_available:
             dnb_ta = None
+        if not ty_available:
+            dnb_ty = None
 
-        # Case 1: No DNB data available
-        if dnb_id is None and dnb_ta is None:
+        # Case 1: No DNB data available at all
+        if dnb_id is None and dnb_ta is None and dnb_ty is None:
             return FusionResult(
                 title=vdeh_data['title'],
                 authors=vdeh_data['authors'],
                 year=vdeh_data['year'],
                 publisher=vdeh_data['publisher'],
+                pages=vdeh_data['pages'],
                 title_source='vdeh',
                 authors_source='vdeh',
                 year_source='vdeh',
                 publisher_source='vdeh',
+                pages_source='vdeh',
             )
 
-        # Case 2: DNB data available - use AI for selection
+        # Case 1.5: Only TY variant available (no AI needed - direct use as fallback)
+        if dnb_id is None and dnb_ta is None and dnb_ty is not None:
+            # TY is used as gap-filling fallback without AI validation
+            result = FusionResult(
+                dnb_variant_selected='title_year',
+                ai_reasoning='TY-Variante als Fallback (kein ID/TA verfügbar)',
+            )
+
+            # Fill missing fields from TY variant
+            for field in ['title', 'authors', 'year', 'publisher', 'pages']:
+                v_val = vdeh_data[field]
+                ty_val = dnb_ty.get(field) if dnb_ty else None
+
+                if pd.notna(v_val):
+                    # VDEH has value - keep it
+                    setattr(result, field, v_val)
+                    setattr(result, f'{field}_source', 'vdeh')
+                elif pd.notna(ty_val):
+                    # VDEH empty, TY has value - use TY
+                    setattr(result, field, ty_val)
+                    setattr(result, f'{field}_source', 'dnb_title_year')
+                else:
+                    # Both empty
+                    setattr(result, field, None)
+                    setattr(result, f'{field}_source', None)
+
+            return result
+
+        # Case 2: ID or TA (or both) available - use AI for selection
         ai_response = self.ollama.query(
             self.build_ai_prompt(vdeh_data, dnb_id, dnb_ta)
         )
@@ -238,10 +289,12 @@ A&B - [Begründung warum beide gleich gut sind, ID bevorzugt]"""
                 authors=vdeh_data['authors'],
                 year=vdeh_data['year'],
                 publisher=vdeh_data['publisher'],
+                pages=vdeh_data['pages'],
                 title_source='vdeh',
                 authors_source='vdeh',
                 year_source='vdeh',
                 publisher_source='vdeh',
+                pages_source='vdeh',
                 ai_reasoning=f"KI: {reason}",
                 dnb_match_rejected=True,
                 rejection_reason=reason,
@@ -263,7 +316,7 @@ A&B - [Begründung warum beide gleich gut sind, ID bevorzugt]"""
         )
 
         # Assign values field by field
-        for field in ['title', 'authors', 'year', 'publisher']:
+        for field in ['title', 'authors', 'year', 'publisher', 'pages']:
             v_val = vdeh_data[field]
             d_val = selected_data.get(field) if selected_data else None
 
