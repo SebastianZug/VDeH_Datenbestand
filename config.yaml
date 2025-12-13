@@ -4,11 +4,11 @@
 
 project:
   name: "Dual-Source Bibliothek Bestandsvergleich"
-  version: "2.0.0"
+  version: "2.2.0"
   description: "Vergleich zwischen VDEH-Neuerwerbungen und UB TUBAF-Bestand"
   author: "Data Analysis Team"
   created: "2024-10-31"
-  updated: "2024-10-31"
+  updated: "2025-12-13"
 
 # =============================================================================
 # MULTI-SOURCE DATENQUELLEN

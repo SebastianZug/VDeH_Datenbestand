@@ -11,6 +11,7 @@ from typing import Dict, Optional, Callable
 import re
 import logging
 import time
+import unicodedata
 
 # Configure logger for this module
 logger = logging.getLogger(__name__)
@@ -67,6 +68,48 @@ MARC_NAMESPACES = {
     'srw': 'http://www.loc.gov/zing/srw/',
     'marc': 'http://www.loc.gov/MARC21/slim'
 }
+
+
+def _normalize_for_search(text: str) -> str:
+    """
+    Normalisiert Text für tolerantere DNB-Suche.
+
+    Behandelt häufige Fehlerquellen:
+    - Akzente/Umlaute: "über" → "uber"
+    - Sonderzeichen: entfernt oder durch Leerzeichen ersetzt
+    - Mehrfache Leerzeichen: reduziert
+
+    Args:
+        text: Zu normalisierender Text
+
+    Returns:
+        Normalisierter Text für DNB-Suche
+
+    Examples:
+        >>> _normalize_for_search("Über die Prüfung von Stählen")
+        'Uber die Prufung von Stahlen'
+        >>> _normalize_for_search("C++ Programmierung")
+        'C Programmierung'
+    """
+    if not text:
+        return ""
+
+    # Unicode-Normalisierung: NFKD zerlegt Zeichen mit Akzenten
+    # "ü" → "u" + "¨" (getrennt)
+    text = unicodedata.normalize('NFKD', text)
+
+    # Entferne alle Non-ASCII Zeichen (inkl. Akzente)
+    # "u" + "¨" → "u"
+    text = text.encode('ASCII', 'ignore').decode('ASCII')
+
+    # Sonderzeichen durch Leerzeichen ersetzen
+    # Behalte nur: Buchstaben, Zahlen, Leerzeichen
+    text = re.sub(r'[^\w\s]', ' ', text)
+
+    # Mehrfache Leerzeichen reduzieren
+    text = re.sub(r'\s+', ' ', text).strip()
+
+    return text
 
 
 def _query_dnb_sru(query: str, max_records: int = 1, identifier_type: str = None, identifier_value: str = None) -> Optional[Dict]:
@@ -262,9 +305,13 @@ def query_dnb_by_title_author(title: str, author: str = None, max_records: int =
     """
     Fragt DNB API mit Titel und optional Autor ab (mit automatischer Retry-Logik).
 
-    Verwendet eine mehrstufige Suchstrategie:
-    1. Titel + Autor (wenn Autor vorhanden)
-    2. Nur Titel (Fallback)
+    Verwendet eine erweiterte mehrstufige Suchstrategie mit Normalisierung:
+    1. Titel + Autor (original)
+    2. Titel + Autor (normalisiert für Umlaute/Sonderzeichen)
+    3. Truncated Titel + Autor (bei langen Titeln)
+    4. Nur Titel (original)
+    5. Nur Titel (normalisiert)
+    6. Nur Titel (truncated)
 
     Args:
         title: Titel des Werks
@@ -282,10 +329,18 @@ def query_dnb_by_title_author(title: str, author: str = None, max_records: int =
     """
     # Bereinige Titel von Sonderzeichen
     title_clean = title.replace('¬', '').strip()
+    title_normalized = _normalize_for_search(title_clean)
+
+    # Truncated Version für lange Titel (erste 60 Zeichen)
+    title_truncated = None
+    if len(title_clean) > 60:
+        # Schneide an Wortgrenze ab
+        title_truncated = title_clean[:60].rsplit(' ', 1)[0].strip()
 
     # Erstelle eine Funktion, die alle Suchstrategien durchläuft
     def _try_all_strategies():
-        # Strategie 1: Titel + Autor (wenn vorhanden)
+        # Autor vorbereiten wenn vorhanden
+        author_lastname = None
         if author:
             # Extrahiere nur ersten Autor und nur Nachname
             # Format kann sein: "Nachname, Vorname" oder "Nachname"
@@ -293,31 +348,66 @@ def query_dnb_by_title_author(title: str, author: str = None, max_records: int =
             # Nehme nur Text vor dem Komma (Nachname)
             author_lastname = first_author.split(',')[0].strip()
 
-            # Versuche mit Autor
+        # GRUPPE 1: Mit Autor (wenn vorhanden)
+        if author_lastname:
+            # Strategie 1a: Original Titel (Phrase) + Autor
             query = f'tit="{title_clean}" and per={author_lastname}'
             result = _query_dnb_sru(query, max_records)
-
             if result:
                 return result
 
-            # Fallback: Titel ohne Anführungszeichen + Autor
+            # Strategie 1b: Original Titel (Wörter) + Autor
             query = f'tit={title_clean} and per={author_lastname}'
             result = _query_dnb_sru(query, max_records)
-
             if result:
                 return result
 
-        # Strategie 2: Nur Titel (Fallback wenn Autor fehlschlägt oder nicht vorhanden)
-        # Verwende Phrasensuche mit Anführungszeichen für bessere Präzision
+            # Strategie 1c: Normalisierter Titel + Autor (für Umlaute/Sonderzeichen)
+            if title_normalized and title_normalized != title_clean:
+                query = f'tit={title_normalized} and per={author_lastname}'
+                result = _query_dnb_sru(query, max_records)
+                if result:
+                    logger.info(f"Match via normalized title: '{title_normalized[:40]}...'")
+                    return result
+
+            # Strategie 1d: Truncated Titel + Autor (bei langen Titeln)
+            if title_truncated:
+                query = f'tit={title_truncated} and per={author_lastname}'
+                result = _query_dnb_sru(query, max_records)
+                if result:
+                    logger.info(f"Match via truncated title: '{title_truncated}...'")
+                    return result
+
+        # GRUPPE 2: Nur Titel (Fallback)
+        # Strategie 2a: Original Titel (Phrase)
         query = f'tit="{title_clean}"'
         result = _query_dnb_sru(query, max_records)
-
         if result:
             return result
 
-        # Strategie 3: Titel ohne Anführungszeichen (größere Toleranz)
+        # Strategie 2b: Original Titel (Wörter)
         query = f'tit={title_clean}'
-        return _query_dnb_sru(query, max_records)
+        result = _query_dnb_sru(query, max_records)
+        if result:
+            return result
+
+        # Strategie 2c: Normalisierter Titel (für Umlaute/Sonderzeichen)
+        if title_normalized and title_normalized != title_clean:
+            query = f'tit={title_normalized}'
+            result = _query_dnb_sru(query, max_records)
+            if result:
+                logger.info(f"Match via normalized title only: '{title_normalized[:40]}...'")
+                return result
+
+        # Strategie 2d: Truncated Titel (bei langen Titeln)
+        if title_truncated:
+            query = f'tit={title_truncated}'
+            result = _query_dnb_sru(query, max_records)
+            if result:
+                logger.info(f"Match via truncated title only: '{title_truncated}...'")
+                return result
+
+        return None
 
     # Query mit Retry-Logik ausführen
     query_desc = f"Title/Author '{title_clean[:50]}'"
@@ -336,7 +426,7 @@ def query_dnb_by_title_year(title: str, year: int, max_records: int = 1, max_ret
     Fragt DNB API mit Titel und Jahr ab (mit automatischer Retry-Logik).
 
     Neue Suchmethode für Records ohne ISBN/ISSN aber mit Titel und Jahr.
-    Verwendet eine mehrstufige Suchstrategie mit verschiedenen Jahr-Toleranzen.
+    Verwendet eine erweiterte Suchstrategie mit Normalisierung und Jahr-Toleranzen.
 
     Args:
         title: Titel des Werks
@@ -354,6 +444,12 @@ def query_dnb_by_title_year(title: str, year: int, max_records: int = 1, max_ret
     """
     # Titel bereinigen
     title_clean = title.replace('¬', '').strip()
+    title_normalized = _normalize_for_search(title_clean)
+
+    # Truncated Version für lange Titel
+    title_truncated = None
+    if len(title_clean) > 60:
+        title_truncated = title_clean[:60].rsplit(' ', 1)[0].strip()
 
     # Jahr validieren
     if not isinstance(year, (int, float)) or year < 1000 or year > 2100:
@@ -363,28 +459,65 @@ def query_dnb_by_title_year(title: str, year: int, max_records: int = 1, max_ret
 
     # Erstelle eine Funktion, die alle Suchstrategien durchläuft
     def _try_all_strategies():
-        # Strategie 1: Exakter Titel (mit Anführungszeichen) + exaktes Jahr
+        # GRUPPE 1: Exaktes Jahr
+        # Strategie 1a: Original Titel (Phrase) + exaktes Jahr
         query = f'tit="{title_clean}" and jhr={year_int}'
         result = _query_dnb_sru(query, max_records)
         if result:
             return result
 
-        # Strategie 2: Titel ohne Anführungszeichen + exaktes Jahr (breitere Suche)
+        # Strategie 1b: Original Titel (Wörter) + exaktes Jahr
         query = f'tit={title_clean} and jhr={year_int}'
         result = _query_dnb_sru(query, max_records)
         if result:
             return result
 
-        # Strategie 3: Exakter Titel + Jahr-Range ±1 (für Publikationsvarianten)
-        # Beispiel: Erstauflage 1915, Neuauflage 1916
+        # Strategie 1c: Normalisierter Titel + exaktes Jahr
+        if title_normalized and title_normalized != title_clean:
+            query = f'tit={title_normalized} and jhr={year_int}'
+            result = _query_dnb_sru(query, max_records)
+            if result:
+                logger.info(f"TY match via normalized title: '{title_normalized[:40]}...'")
+                return result
+
+        # Strategie 1d: Truncated Titel + exaktes Jahr
+        if title_truncated:
+            query = f'tit={title_truncated} and jhr={year_int}'
+            result = _query_dnb_sru(query, max_records)
+            if result:
+                logger.info(f"TY match via truncated title: '{title_truncated}...'")
+                return result
+
+        # GRUPPE 2: Jahr-Range ±1 (für Publikationsvarianten)
+        # Strategie 2a: Original Titel (Phrase) + Jahr ±1
         query = f'tit="{title_clean}" and jhr>={year_int-1} and jhr<={year_int+1}'
         result = _query_dnb_sru(query, max_records)
         if result:
             return result
 
-        # Strategie 4: Titel ohne Anführungszeichen + Jahr-Range ±1
+        # Strategie 2b: Original Titel (Wörter) + Jahr ±1
         query = f'tit={title_clean} and jhr>={year_int-1} and jhr<={year_int+1}'
-        return _query_dnb_sru(query, max_records)
+        result = _query_dnb_sru(query, max_records)
+        if result:
+            return result
+
+        # Strategie 2c: Normalisierter Titel + Jahr ±1
+        if title_normalized and title_normalized != title_clean:
+            query = f'tit={title_normalized} and jhr>={year_int-1} and jhr<={year_int+1}'
+            result = _query_dnb_sru(query, max_records)
+            if result:
+                logger.info(f"TY match via normalized title (±1 year): '{title_normalized[:40]}...'")
+                return result
+
+        # Strategie 2d: Truncated Titel + Jahr ±1
+        if title_truncated:
+            query = f'tit={title_truncated} and jhr>={year_int-1} and jhr<={year_int+1}'
+            result = _query_dnb_sru(query, max_records)
+            if result:
+                logger.info(f"TY match via truncated title (±1 year): '{title_truncated}...'")
+                return result
+
+        return None
 
     # Query mit Retry-Logik ausführen
     return _retry_with_backoff(

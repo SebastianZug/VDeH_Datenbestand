@@ -127,6 +127,87 @@ class FusionEngine:
 
         return SequenceMatcher(None, t1, t2).ratio()
 
+    @staticmethod
+    def validate_dnb_match(
+        vdeh_data: Dict,
+        dnb_data: Dict,
+        min_title_similarity: float = 0.5,
+        max_year_diff: int = 2,
+        max_pages_diff: float = 0.2
+    ) -> Tuple[bool, str]:
+        """
+        Validiert ob ein DNB-Match wirklich zum VDEH-Record passt.
+
+        Prüft mehrere Kriterien um False Positives zu vermeiden:
+        - Titel-Ähnlichkeit (SequenceMatcher)
+        - Jahr-Differenz (±2 Jahre OK)
+        - Seitenzahl-Differenz (<20% OK)
+
+        Args:
+            vdeh_data: VDEH record dictionary
+            dnb_data: DNB record dictionary
+            min_title_similarity: Minimum title similarity (0.0-1.0)
+            max_year_diff: Maximum year difference in years
+            max_pages_diff: Maximum pages difference (percentage)
+
+        Returns:
+            Tuple of (is_valid, reason)
+
+        Example:
+            >>> vdeh = {'title': 'Faust', 'year': 1808, 'pages': '368 S.'}
+            >>> dnb = {'title': 'Faust I', 'year': 1808, 'pages': '370 S.'}
+            >>> valid, reason = FusionEngine.validate_dnb_match(vdeh, dnb)
+            >>> valid
+            True
+        """
+        # Titel-Ähnlichkeit prüfen
+        vdeh_title = vdeh_data.get('title')
+        dnb_title = dnb_data.get('title')
+
+        if not vdeh_title or not dnb_title:
+            # Wenn Titel fehlt, kann nicht validiert werden → Akzeptieren
+            return True, "Titel fehlt - keine Validierung möglich"
+
+        title_sim = FusionEngine.calculate_title_similarity(vdeh_title, dnb_title)
+
+        if title_sim < min_title_similarity:
+            return False, f"Titel zu unterschiedlich (Similarity: {title_sim:.1%})"
+
+        # Jahr prüfen (±max_year_diff Jahre OK)
+        vdeh_year = vdeh_data.get('year')
+        dnb_year = dnb_data.get('year')
+
+        if vdeh_year and dnb_year:
+            try:
+                year_diff = abs(int(vdeh_year) - int(dnb_year))
+                if year_diff > max_year_diff:
+                    return False, f"Jahr zu weit weg ({year_diff} Jahre Differenz)"
+            except (ValueError, TypeError):
+                # Jahr nicht konvertierbar → Ignorieren
+                pass
+
+        # Seitenzahl prüfen (wenn beide vorhanden)
+        vdeh_pages = vdeh_data.get('pages')
+        dnb_pages = dnb_data.get('pages')
+
+        if vdeh_pages and dnb_pages:
+            pages_match, pages_diff = calculate_pages_match(vdeh_pages, dnb_pages)
+
+            if pages_diff is not None and pages_diff > max_pages_diff:
+                return False, f"Seitenzahl zu unterschiedlich ({pages_diff:.1%} Differenz)"
+
+        # Alle Checks bestanden
+        reasons = [f"Titel: {title_sim:.1%}"]
+
+        if vdeh_year and dnb_year:
+            reasons.append(f"Jahr: {vdeh_year} vs {dnb_year}")
+
+        if vdeh_pages and dnb_pages:
+            if pages_diff is not None:
+                reasons.append(f"Pages: {pages_diff:.1%} diff")
+
+        return True, ", ".join(reasons)
+
     def build_ai_prompt(
         self,
         vdeh: Dict,
@@ -396,6 +477,30 @@ A&B - [Begründung warum beide gleich gut sind, ID bevorzugt]"""
         selected_variant = 'id' if choice == 'A' else 'title_author'
         selected_data = dnb_id if selected_variant == 'id' else dnb_ta
 
+        # Validate DNB match (zusätzliche Sicherheit gegen False Positives)
+        is_valid, validation_reason = self.validate_dnb_match(vdeh_data, selected_data)
+
+        if not is_valid:
+            # Match rejected by validation
+            logger.warning(
+                f"DNB {selected_variant} match rejected by validation: {validation_reason}"
+            )
+            return FusionResult(
+                title=vdeh_data['title'],
+                authors=vdeh_data['authors'],
+                year=vdeh_data['year'],
+                publisher=vdeh_data['publisher'],
+                pages=vdeh_data['pages'],
+                title_source='vdeh',
+                authors_source='vdeh',
+                year_source='vdeh',
+                publisher_source='vdeh',
+                pages_source='vdeh',
+                ai_reasoning=f"KI wählte {selected_variant}, aber Validierung fehlgeschlagen",
+                dnb_match_rejected=True,
+                rejection_reason=f"Validierung: {validation_reason}",
+            )
+
         # Compare fields to find conflicts and confirmations
         conflicts, confirmations = compare_fields(vdeh_data, selected_data)
 
@@ -403,7 +508,7 @@ A&B - [Begründung warum beide gleich gut sind, ID bevorzugt]"""
         result = FusionResult(
             conflicts=json.dumps(conflicts, ensure_ascii=False) if conflicts else None,
             confirmations=json.dumps(confirmations, ensure_ascii=False) if confirmations else None,
-            ai_reasoning=f"KI Entscheidung: Variante {selected_variant} gewählt. {reason}",
+            ai_reasoning=f"KI Entscheidung: Variante {selected_variant} gewählt. {reason}. Validierung: {validation_reason}",
             dnb_variant_selected=selected_variant,
         )
 
