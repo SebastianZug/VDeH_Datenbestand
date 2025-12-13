@@ -10,9 +10,10 @@ import logging
 import pandas as pd
 from typing import Dict, Optional, Tuple
 from pathlib import Path
+from difflib import SequenceMatcher
 
 from .ollama_client import OllamaClient, OllamaUnavailableError
-from .utils import compare_fields, format_record_for_display
+from .utils import compare_fields, format_record_for_display, calculate_pages_match
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +39,8 @@ class FusionResult:
         dnb_variant_selected: Optional[str] = None,
         dnb_match_rejected: bool = False,
         rejection_reason: Optional[str] = None,
+        title_similarity_score: Optional[float] = None,
+        pages_difference: Optional[float] = None,
     ):
         self.title = title
         self.authors = authors
@@ -55,6 +58,8 @@ class FusionResult:
         self.dnb_variant_selected = dnb_variant_selected
         self.dnb_match_rejected = dnb_match_rejected
         self.rejection_reason = rejection_reason
+        self.title_similarity_score = title_similarity_score
+        self.pages_difference = pages_difference
 
     def to_dict(self) -> Dict:
         """Convert to dictionary for DataFrame storage."""
@@ -75,6 +80,8 @@ class FusionResult:
             'dnb_variant_selected': self.dnb_variant_selected,
             'dnb_match_rejected': self.dnb_match_rejected,
             'rejection_reason': self.rejection_reason,
+            'title_similarity_score': self.title_similarity_score,
+            'pages_difference': self.pages_difference,
         }
 
 
@@ -85,6 +92,7 @@ class FusionEngine:
         self,
         ollama_client: OllamaClient,
         variant_priority: list = None,
+        ty_similarity_threshold: float = 0.7,
     ):
         """
         Initialize fusion engine.
@@ -92,9 +100,32 @@ class FusionEngine:
         Args:
             ollama_client: Configured OllamaClient instance
             variant_priority: Priority order for DNB variants (default: ["id", "title_author"])
+            ty_similarity_threshold: Minimum title similarity for accepting TY matches (default: 0.7)
         """
         self.ollama = ollama_client
         self.variant_priority = variant_priority or ["id", "title_author"]
+        self.ty_similarity_threshold = ty_similarity_threshold
+
+    @staticmethod
+    def calculate_title_similarity(title1: str, title2: str) -> float:
+        """
+        Calculate similarity between two titles using SequenceMatcher.
+
+        Args:
+            title1: First title string
+            title2: Second title string
+
+        Returns:
+            Similarity score between 0.0 and 1.0
+        """
+        if not title1 or not title2:
+            return 0.0
+
+        # Normalize: lowercase and strip
+        t1 = str(title1).lower().strip()
+        t2 = str(title2).lower().strip()
+
+        return SequenceMatcher(None, t1, t2).ratio()
 
     def build_ai_prompt(
         self,
@@ -248,12 +279,73 @@ A&B - [Begründung warum beide gleich gut sind, ID bevorzugt]"""
                 pages_source='vdeh',
             )
 
-        # Case 1.5: Only TY variant available (no AI needed - direct use as fallback)
+        # Case 1.5: Only TY variant available - validate with similarity threshold + pages
         if dnb_id is None and dnb_ta is None and dnb_ty is not None:
-            # TY is used as gap-filling fallback without AI validation
+            # Calculate title similarity
+            vdeh_title = vdeh_data.get('title')
+            dnb_ty_title = dnb_ty.get('title')
+            similarity = self.calculate_title_similarity(vdeh_title, dnb_ty_title)
+
+            # Check pages match (if both available)
+            vdeh_pages = vdeh_data.get('pages')
+            dnb_ty_pages = dnb_ty.get('pages')
+            pages_match, pages_diff = calculate_pages_match(vdeh_pages, dnb_ty_pages)
+
+            # Decision logic: Similarity + Pages
+            accept_match = False
+            reason = ""
+
+            if similarity >= self.ty_similarity_threshold:
+                # High similarity → Accept
+                accept_match = True
+                reason = f"Similarity: {similarity:.1%}"
+            elif similarity >= 0.5 and pages_match:
+                # Borderline similarity (50-70%) but pages match → Accept
+                accept_match = True
+                reason = f"Similarity: {similarity:.1%}, Pages-Match bestätigt ({vdeh_pages} ≈ {dnb_ty_pages})"
+                logger.info(
+                    f"TY borderline match rescued by pages: "
+                    f"similarity={similarity:.1%}, pages={vdeh_pages} vs {dnb_ty_pages}"
+                )
+            else:
+                # Low similarity and no pages confirmation → Reject
+                reason = f"Similarity: {similarity:.1%}"
+                if pages_diff is not None:
+                    reason += f", Pages mismatch: {pages_diff:.1%} diff"
+
+            # Reject if not accepted
+            if not accept_match:
+                logger.info(
+                    f"TY match rejected: {reason} "
+                    f"(VDEH: '{vdeh_title[:50] if vdeh_title else ''}...' vs DNB: '{dnb_ty_title[:50] if dnb_ty_title else ''}...')"
+                )
+                return FusionResult(
+                    title=vdeh_data['title'],
+                    authors=vdeh_data['authors'],
+                    year=vdeh_data['year'],
+                    publisher=vdeh_data['publisher'],
+                    pages=vdeh_data['pages'],
+                    title_source='vdeh',
+                    authors_source='vdeh',
+                    year_source='vdeh',
+                    publisher_source='vdeh',
+                    pages_source='vdeh',
+                    dnb_match_rejected=True,
+                    rejection_reason=f'TY-Match zu unsicher ({reason})',
+                    title_similarity_score=similarity,
+                    pages_difference=pages_diff,
+                )
+
+            # Accept TY match - use as gap-filling fallback
+            logger.info(
+                f"TY match accepted: {reason}"
+            )
+
             result = FusionResult(
                 dnb_variant_selected='title_year',
-                ai_reasoning='TY-Variante als Fallback (kein ID/TA verfügbar)',
+                ai_reasoning=f'TY-Variante als Fallback (kein ID/TA verfügbar, {reason})',
+                title_similarity_score=similarity,
+                pages_difference=pages_diff,
             )
 
             # Fill missing fields from TY variant

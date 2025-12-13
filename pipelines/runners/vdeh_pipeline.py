@@ -17,7 +17,7 @@ VDEH_NOTEBOOKS = [
     "notebooks/01_vdeh_preprocessing/01_vdeh_data_loading.ipynb",
     "notebooks/01_vdeh_preprocessing/02_vdeh_data_preprocessing.ipynb",
     "notebooks/01_vdeh_preprocessing/03_vdeh_language_detection.ipynb",
-    "notebooks/01_vdeh_preprocessing/04_vdeh_data_enrichment.ipynb"
+    "notebooks/01_vdeh_preprocessing/04_vdeh_data_enrichment.ipynb",
     "notebooks/01_vdeh_preprocessing/05_vdeh_data_fusion.ipynb"
 ]
 

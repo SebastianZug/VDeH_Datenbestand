@@ -71,27 +71,40 @@ title_year_candidates = df_vdeh[
 
 ### 3. Fusion Engine Extension ([src/fusion/fusion_engine.py](../src/fusion/fusion_engine.py))
 
-**Strategie:** TY als **Fallback** (kein AI benötigt)
+**Strategie:** TY als **Fallback mit Similarity-Validierung**
 
 **Logik:**
 ```python
 # Fall 1: Nur TY verfügbar (kein ID, kein TA)
 if dnb_id is None and dnb_ta is None and dnb_ty is not None:
-    # Nutze TY als Gap-Filling ohne AI-Validierung
-    # VDEH-Werte haben Priorität
-    # TY füllt nur leere Felder
+    # Berechne Titel-Ähnlichkeit
+    similarity = calculate_title_similarity(vdeh_title, dnb_ty_title)
+
+    # Akzeptiere nur wenn Similarity ≥ 70%
+    if similarity >= 0.7:
+        # Nutze TY als Gap-Filling
+        # VDEH-Werte haben Priorität, TY füllt nur leere Felder
+    else:
+        # Reject - zu unsicher
+        return vdeh_data
 ```
 
-**Warum Fallback ohne AI?**
-- TY-Records haben keine ISBN/ISSN/Autoren in MARC21
-- Keine Konflikte zu erwarten (VDEH meist leer)
-- AI-Validierung würde unnötig Zeit/Kosten verursachen
+**Similarity-Threshold: 70%**
+- **Eliminiert False Positives:** Kurze generische Titel ("Casting", "Corrosion") werden abgelehnt
+- **Akzeptiert hochwertige Matches:** Spezifische Titel mit >70% Übereinstimmung
+- **Balance:** 57.6% der TY-Matches werden akzeptiert (193 von 335)
+- **Vorteil:** Datenqualität > Datenquantität
+
+**Warum Similarity statt AI?**
+- TY-Records haben keine ISBN/ISSN/Autoren zum Abgleichen
+- Titel-Vergleich ist ausreichend und schneller als AI
+- AI-Validierung würde bei fehlenden Feldern nichts bringen
 - ID/TA haben Priorität (werden via AI validiert)
 
 **Fusion-Hierarchie:**
-1. **ID-Variante** (ISBN/ISSN) - höchste Priorität
-2. **TA-Variante** (Title/Author) - zweite Priorität
-3. **TY-Variante** (Title/Year) - Fallback für Gaps
+1. **ID-Variante** (ISBN/ISSN) - höchste Priorität (AI-validiert)
+2. **TA-Variante** (Title/Author) - zweite Priorität (AI-validiert)
+3. **TY-Variante** (Title/Year) - Fallback mit Similarity-Filter (≥70%)
 4. **VDEH** - Original immer als Basis
 
 ### 4. Testing
@@ -107,23 +120,47 @@ if dnb_id is None and dnb_ta is None and dnb_ty is not None:
 - 📊 ~50% VDEH-Kandidaten sind technische Berichte (niedrige DNB-Abdeckung)
 - 📊 ~50% VDEH-Kandidaten sind potenziell publizierte Bücher (20-30% DNB-Abdeckung)
 
-## Erwartete Verbesserungen
+## Tatsächliche Ergebnisse (mit 70% Similarity-Filter)
 
 ### Vorher (nur ID + TA):
 - Autoren gefüllt: 371 von 40,769 (0.9%)
 - ISBN gefüllt: 604
 - ISSN gefüllt: 127
 
-### Nachher (mit TY):
-- Autoren gefüllt: **2,016 - 2,839** (4.9% - 7.0%)
-  - Verbesserung: **+5-8x**
-- ISBN gefüllt: **~1,200 - 1,500** (zusätzlich)
-- ISSN gefüllt: **~200 - 300** (zusätzlich)
+### Nachher (mit TY + Similarity-Filter):
+- **Hochwertige TY-Matches:** 193 von 335 Raw-Matches (57.6% Akzeptanz)
+- **Neue Autoren:** ~101 zusätzliche Records mit Autoren
+- **Autoren gefüllt:** **~472** (371 + 101) von 40,769 (**1.2%**)
+  - **Verbesserung:** +27% (nicht 5-8x wie initial erwartet)
+- **ISBN gefüllt:** ~607 (+3, TY-Records haben selten ISBN)
+- **ISSN gefüllt:** ~241 (+114, viele Zeitschriften)
+- **Publisher gefüllt:** +190 zusätzliche Records
+
+### Warum weniger als erwartet?
+
+**Initial geschätzt:** 1,645-2,468 neue Autoren (10-15% DNB-Abdeckung)
+
+**Tatsächlich:** ~101 neue Autoren (0.6% der 16,458 TY-Kandidaten)
+
+**Gründe:**
+1. **DNB-Abdeckung nur 2%** (statt 10-15%)
+   - 95.2% der TY-Queries fanden kein DNB-Match
+   - VDEH-Bestand enthält viele technische Berichte, Normen, Standards (nicht in DNB)
+
+2. **Similarity-Filter eliminiert 42.4%**
+   - Von 335 Raw-Matches → 193 akzeptiert, 142 abgelehnt
+   - Notwendig um False Positives zu vermeiden
+
+3. **Impact trotzdem wertvoll:**
+   - **+27% mehr Autoren** (371 → 472)
+   - **+90% mehr ISSN** (127 → 241)
+   - **Hohe Datenqualität** durch Similarity-Validierung
 
 ### API-Kosten:
-- ~16,458 neue Queries
+- ~16,458 neue Queries (vollständig durchgeführt)
 - Bei 1 Query/sec: ~4.6 Stunden
 - Rate-Limiting: 1s Pause pro Query
+- **Tatsächlicher Ertrag:** 193 hochwertige Matches
 
 ## Datenfluss
 

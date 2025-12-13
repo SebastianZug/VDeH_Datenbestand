@@ -14,15 +14,26 @@ project:
 # MULTI-SOURCE DATENQUELLEN
 # =============================================================================
 data_sources:
-  # VDEH Neuerwerbungen (OAI-PMH XML)
+  # VDEH Neuerwerbungen (MARC21 XML) - Updated 2025-12-09
   vdeh:
+    type: "marc21_xml"
+    description: "Neuerwerbungen der VDEH Bibliotheken (MARC21 Format)"
+    path: "data/vdeh/raw/marcVDEH.xml"
+    parser_module: "src/parsers/marc21_parser.py"
+    parser_class: "MARC21Parser"
+    encoding: "utf-8"
+    estimated_records: 58305
+
+  # Legacy: MAB Format (archiviert)
+  vdeh_mab_legacy:
     type: "oai_pmh_xml"
-    description: "Neuerwerbungen der VDEH Bibliotheken"
+    description: "Neuerwerbungen der VDEH Bibliotheken (MAB Format - veraltet)"
     path: "data/vdeh/raw/VDEH_mab_all.xml"
     parser_module: "src/parsers/vdeh_parser.py"
     parser_class: "VDEHParser"
     encoding: "utf-8"
     estimated_records: 58760
+    archived: true
     
   # UB TUBAF Bestand (MAB2 Format)
   ub_tubaf:
@@ -81,11 +92,17 @@ paths:
 # =====================================
 
 data_processing:
-  # VDEH XML-Parser Einstellungen
-  vdeh_parser:
+  # MARC21 XML-Parser Einstellungen (VDEH)
+  marc21_parser:
     max_records: null  # null = alle Records, oder Zahl für Testläufe
+    encoding: "utf-8"
+
+  # Legacy: MAB/OAI-PMH Parser (archiviert)
+  vdeh_parser:
+    max_records: null
     namespace: "http://www.openarchives.org/OAI/2.0/"
     encoding: "utf-8"
+    archived: true
     
   # MAB2-Parser Einstellungen
   mab2_parser:
@@ -220,6 +237,7 @@ debug:
   verbose_output: true
   save_intermediate_results: true  # Wichtig für Debug bei Vergleichen
   profile_performance: false
+  fusion_limit: 0  # Limit für Test-Fusion (0 oder null = kein Limit)
   
 # =====================================
 # REPORT-GENERIERUNG

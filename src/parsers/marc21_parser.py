@@ -471,12 +471,41 @@ def _is_issn(text: str) -> bool:
 
 
 def _format_isbn(isbn: str) -> str:
-    """Formatiert ISBN mit Bindestrichen"""
+    """
+    Formatiert ISBN mit Bindestrichen und bereinigt doppelte ISBNs.
+
+    Behandelt folgende Fälle:
+    - Einzelne ISBN-10 oder ISBN-13: Normale Formatierung
+    - Doppelte ISBN-10 (Länge 20): Nutzt erste ISBN
+    - Doppelte ISBN-13 (Länge 26): Nutzt erste ISBN
+    - Gemischte ISBN-10+13 (Länge 23): Nutzt erste ISBN
+
+    Args:
+        isbn: Raw ISBN string
+
+    Returns:
+        Formatierte und bereinigte ISBN
+    """
     isbn = re.sub(r'[^0-9X]', '', isbn.upper())
+
+    # Bereinige doppelte/konkatenierte ISBNs
+    if len(isbn) == 20:  # Zwei ISBN-10 konkateniert
+        logger.debug(f"Double ISBN-10 detected: {isbn} -> using first: {isbn[:10]}")
+        isbn = isbn[:10]  # Nutze erste ISBN
+    elif len(isbn) == 26:  # Zwei ISBN-13 konkateniert
+        logger.debug(f"Double ISBN-13 detected: {isbn} -> using first: {isbn[:13]}")
+        isbn = isbn[:13]  # Nutze erste ISBN
+    elif len(isbn) == 23:  # ISBN-10 + ISBN-13 gemischt
+        logger.debug(f"Mixed ISBN detected: {isbn} -> using first: {isbn[:10]}")
+        isbn = isbn[:10]  # Nutze erste (ISBN-10)
+
+    # Formatiere bereinigte ISBN
     if len(isbn) == 13:  # ISBN-13
         return f"{isbn[0:3]}-{isbn[3]}-{isbn[4:7]}-{isbn[7:12]}-{isbn[12]}"
     elif len(isbn) == 10:  # ISBN-10
         return f"{isbn[0]}-{isbn[1:4]}-{isbn[4:9]}-{isbn[9]}"
+
+    # Ungültige Länge - gebe Raw zurück
     return isbn
 
 

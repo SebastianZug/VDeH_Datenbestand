@@ -1,6 +1,6 @@
 # Dual-Source Bibliothek Bestandsvergleich
 
-**Version 2.1.0** | KI-gestützte bibliographische Datenanreicherung und -fusion
+**Version 2.3.0** | KI-gestützte bibliographische Datenanreicherung und -fusion
 
 ## 📋 Übersicht
 
@@ -8,12 +8,13 @@ Dieses Projekt führt einen systematischen Vergleich zwischen VDEH-Neuerwerbunge
 
 ### Hauptmerkmale
 
-- 🔍 **Triple-Strategy DNB-Anreicherung**: ISBN/ISSN + Titel/Autor + **Titel/Jahr (NEU!)**
+- 🔍 **Triple-Strategy DNB-Anreicherung**: ISBN/ISSN + Titel/Autor + Titel/Jahr
 - 🤖 **KI-gestützte Fusion**: Ollama LLM (llama3.3:70b) für intelligente Variantenauswahl
 - 📊 **Datenqualitätsanalyse**: Umfassende Qualitätsmetriken und Konfliktdetektion
 - 📚 **ISBN/ISSN/Pages-Extraktion**: Automatische Identifier- und Seitenzahlen-Anreicherung
 - 🔄 **Inkrementelle Verarbeitung**: Progressive Speicherung und Wiederaufnahme
-- 📖 **Seitenzahlen-Tracking**: Vollständige Pages-Erfassung aus MARC21 und DNB
+- 📖 **Pages-Validierung**: Seitenzahlen als zusätzliches Validierungskriterium (±10% Toleranz) **NEU in v2.3!**
+- 🧹 **ISBN-Cleanup**: Automatische Erkennung und Bereinigung doppelter ISBNs
 
 ---
 
@@ -479,15 +480,28 @@ Dieses Projekt ist für interne Verwendung bestimmt.
 
 **Erstellt:** 2024-10-31
 **Letzte Aktualisierung:** 2025-12-12
-**Version:** 2.1.0
+**Version:** 2.2.0
 
-## 🆕 Was ist neu in v2.1.0?
+## 🆕 Was ist neu in v2.2.0?
 
-### Title/Year Search (Dritte DNB-Strategie)
+### ISBN-Cleanup (Automatische Bereinigung)
+- **Problem**: 209 ungültige ISBNs (2.0%), davon 116 doppelte ISBNs
+- **Lösung**: Automatisches Aufspalten konkatenierter ISBNs im MARC21-Parser
+- **Gewinn**: ~58 zusätzliche DNB-Matches (höchste Qualität!)
+- **Transparente Integration**: Keine Code-Änderungen nötig, läuft automatisch
+- **Test-Abdeckung**: 8/8 Tests bestanden ✅
+
+### Previous: v2.1.0
+
+### Title/Year Search (Dritte DNB-Strategie) mit Similarity-Filter
 - **Neue Suchmethode**: Titel + Jahr für Records ohne ISBN/ISSN/Autoren
-- **Reichweite**: 16,458 zusätzliche Records erreichbar
-- **Erwarteter Gewinn**: 1,645-2,468 neue Autoren (5-8x Verbesserung!)
-- **Fallback-Logik**: Automatische Nutzung wenn ID/TA nicht verfügbar
+- **Reichweite**: 16,458 zusätzliche Records abgefragt
+- **Similarity-Validierung**: 70% Threshold eliminiert False Positives
+- **Tatsächlicher Gewinn**:
+  - **+101 neue Autoren** (+27% Verbesserung)
+  - **+114 neue ISSN** (+90% Verbesserung)
+  - **+190 Publisher-Ergänzungen**
+- **Qualität über Quantität**: 193 hochwertige Matches (57.6% Akzeptanzrate)
 
 ### Seitenzahlen-Extraktion
 - **MARC21 Field 300**: Vollständige Pages-Erfassung (49.9% Abdeckung)
@@ -496,8 +510,9 @@ Dieses Projekt ist für interne Verwendung bestimmt.
 - **Erwartete Gesamtabdeckung**: ~55-60% (nach DNB-Enrichment)
 
 ### Dokumentation
-- [`docs/title_year_implementation.md`](docs/title_year_implementation.md) - Detaillierte Implementierung
+- [`docs/title_year_implementation.md`](docs/title_year_implementation.md) - Detaillierte Implementierung mit Ergebnisanalyse
 - Vollständige API-Dokumentation für alle drei Suchmethoden
 - Test-Scripts und Validierung
+- Similarity-Filter Begründung und Metriken
 
 Siehe [CHANGELOG_MARC21.md](CHANGELOG_MARC21.md) für vollständige Release Notes.
