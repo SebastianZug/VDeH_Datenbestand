@@ -375,15 +375,27 @@ class MAB2Parser:
                                     record.fields[current_field] = [record.fields[current_field], content]
                             else:
                                 record.fields[current_field] = content
-                        
+
                         # Neues Feld beginnt
-                        field_code = line[:3]  # Basis-Feldcode
-                        field_content = line[3:].strip()
-                        
-                        # Handle Subfeldkennungen (z.B. 331a)
-                        if len(line) > 3 and line[3].isalpha():
-                            field_content = line[4:].strip()
-                            
+                        field_code = line[:3]  # Basis-Feldcode (3 Ziffern)
+                        rest_of_line = line[3:]  # Alles nach dem Feldcode
+
+                        # Handle Subfeldkennungen (z.B. "331a", "070aBSZ", "540aISBN...")
+                        # Format kann sein: "331 Text" oder "331aText" oder "540aISBN..."
+                        if rest_of_line:
+                            # Wenn direkt ein Buchstabe folgt (Subfeld-Indikator)
+                            if rest_of_line[0].isalpha():
+                                # Subfeld-Indikator überspringen (z.B. 'a', 'b')
+                                field_content = rest_of_line[1:].strip()
+                            elif rest_of_line[0] == ' ':
+                                # Leerzeichen nach Feldcode (Standard-Fall)
+                                field_content = rest_of_line.strip()
+                            else:
+                                # Andere Zeichen direkt nutzen
+                                field_content = rest_of_line.strip()
+                        else:
+                            field_content = ""
+
                         current_field = field_code
                         current_content = [field_content] if field_content else []
                         
@@ -428,9 +440,35 @@ class MAB2Parser:
                 self.logger.error(f"❌ {msg}")
             return None
     
+    def _get_field_value(self, record: MAB2Record, field_code: str) -> Optional[str]:
+        """
+        Holt einen Feldwert aus dem Record.
+        Wenn das Feld mehrfach vorkommt (Liste), nimm den ersten Wert.
+
+        Args:
+            record: MAB2Record Objekt
+            field_code: Feldcode (z.B. '425', '331')
+
+        Returns:
+            Feldwert als String oder None
+        """
+        if field_code not in record.fields:
+            return None
+
+        value = record.fields[field_code]
+
+        # Wenn Liste, nimm ersten nicht-leeren Wert
+        if isinstance(value, list):
+            for v in value:
+                if v and v.strip():
+                    return v.strip()
+            return None
+
+        return value.strip() if value else None
+
     def _extract_bibliographic_data(self, record: MAB2Record) -> Optional[Dict]:
         """Extrahiert standardisierte bibliographische Daten aus einem MAB2-Record"""
-        
+
         # Basis-Daten
         bib_data = {
             'id': record.record_id,
@@ -444,16 +482,15 @@ class MAB2Parser:
             'physical_desc': None,
             'original_fields': {}  # Debug-Info
         }
-        
+
         # Speichere Original-Felder für Debug
         bib_data['original_fields'] = record.fields.copy()
-        
+
         # Titel extrahieren (310 ist Haupttitel, 331 Alternative)
         title_candidates = []
         for field_code in ['310', '331', '359']:  # Haupt-, Alt-Titel, Untertitel
-            if field_code in record.fields:
-                title_text = record.fields[field_code].strip()
-                if title_text:
+            title_text = self._get_field_value(record, field_code)
+            if title_text:
                     # Bereinige spezielle Formatierungen
                     title_text = re.sub(r'\$[a-z]', ' ', title_text)  # Entferne $a, $b etc.
                     title_text = re.sub(r'¬\[.*?\]¬', '', title_text)  # Entferne [Brackets]
@@ -469,24 +506,23 @@ class MAB2Parser:
         # Autoren sammeln
         authors = []
         for field_code in ['100', '200']:  # Haupt- und Nebenautoren
-            if field_code in record.fields:
-                author_text = record.fields[field_code].strip()
+            author_text = self._get_field_value(record, field_code)
+            if author_text:
+                # Bereinige Autorennamen
+                author_text = re.sub(r'\$[a-z]', ' ', author_text)
+                author_text = re.sub(r'¬\[.*?\]¬', '', author_text)
+                author_text = re.sub(r'\[.*?\]', '', author_text)
+                author_text = re.sub(r'\s+', ' ', author_text).strip()
                 if author_text:
-                    # Bereinige Autorennamen
-                    author_text = re.sub(r'\$[a-z]', ' ', author_text)
-                    author_text = re.sub(r'¬\[.*?\]¬', '', author_text)
-                    author_text = re.sub(r'\[.*?\]', '', author_text)
-                    author_text = re.sub(r'\s+', ' ', author_text).strip()
-                    if author_text:
-                        authors.append(author_text)
+                    authors.append(author_text)
         
         if authors:
             bib_data['authors'] = authors
             bib_data['authors_str'] = ' ; '.join(authors)
         
         # Jahr extrahieren
-        if '425' in record.fields:
-            year_str = record.fields['425']
+        year_str = self._get_field_value(record, '425')
+        if year_str:
             # Extrahiere 4-stellige Jahreszahl, auch mit möglichen Präfixen/Suffixen
             year_match = re.search(r'(?:^|[^\d])([12][0-9]{3})(?:[^\d]|$)', year_str)
             if year_match:
@@ -496,39 +532,36 @@ class MAB2Parser:
                         bib_data['year'] = year
                 except ValueError:
                     pass
-            
+
             # Für Debug: Speichere Original
             bib_data['year_original'] = year_str
-        
+
         # ISBN extrahieren und validieren
         isbn_candidates = []
-        for field_code in ['010', '540', '013k']:
-            if field_code in record.fields:
-                isbn_text = record.fields[field_code].strip()
-                if isbn_text:
-                    # Extrahiere ISBN mit oder ohne Präfix
-                    isbn_match = re.search(r'(?:ISBN[- ]*)?([\dX\-]+)', isbn_text)
-                    if isbn_match:
-                        isbn = re.sub(r'[^\dX]', '', isbn_match.group(1))
-                        if len(isbn) in [10, 13]:  # Validiere Länge
-                            isbn_candidates.append(isbn)
-                    
+        for field_code in ['010', '540', '013']:
+            isbn_text = self._get_field_value(record, field_code)
+            if isbn_text:
+                # Extrahiere ISBN mit oder ohne Präfix
+                isbn_match = re.search(r'(?:ISBN[- ]*)?([\dX\-]+)', isbn_text)
+                if isbn_match:
+                    isbn = re.sub(r'[^\dX]', '', isbn_match.group(1))
+                    if len(isbn) in [10, 13]:  # Validiere Länge
+                        isbn_candidates.append(isbn)
+
         if isbn_candidates:
             bib_data['isbn'] = isbn_candidates[0]  # Nimm die erste valide ISBN
             # Für Debug: Speichere alle Kandidaten
             bib_data['isbn_candidates'] = isbn_candidates
-        
+
         # Erscheinungsort
-        if '410' in record.fields:
-            place_text = record.fields['410'].strip()
-            if place_text:
-                bib_data['place'] = place_text
-        
+        place_text = self._get_field_value(record, '410')
+        if place_text:
+            bib_data['place'] = place_text
+
         # Physische Beschreibung
-        if '433' in record.fields:
-            phys_text = record.fields['433'].strip()
-            if phys_text:
-                bib_data['physical_desc'] = phys_text
+        phys_text = self._get_field_value(record, '433')
+        if phys_text:
+            bib_data['physical_desc'] = phys_text
         
         # Gebe Record zurück wenn mindestens ein wichtiges Feld vorhanden ist
         if (bib_data['title'] or bib_data['authors'] or 
