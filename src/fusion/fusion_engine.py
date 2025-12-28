@@ -1,8 +1,8 @@
 """
-Core fusion engine for merging VDEH and DNB bibliographic data.
+Core fusion engine for merging VDEH, DNB and LoC bibliographic data.
 
 Author: Bibliographic Data Analysis
-Date: November 2025
+Date: December 2025
 """
 
 import json
@@ -86,13 +86,14 @@ class FusionResult:
 
 
 class FusionEngine:
-    """Engine for fusing VDEH and DNB bibliographic records."""
+    """Engine for fusing VDEH, DNB and LoC bibliographic records."""
 
     def __init__(
         self,
         ollama_client: OllamaClient,
         variant_priority: list = None,
         ty_similarity_threshold: float = 0.7,
+        enable_loc: bool = True,
     ):
         """
         Initialize fusion engine.
@@ -101,10 +102,12 @@ class FusionEngine:
             ollama_client: Configured OllamaClient instance
             variant_priority: Priority order for DNB variants (default: ["id", "title_author"])
             ty_similarity_threshold: Minimum title similarity for accepting TY matches (default: 0.7)
+            enable_loc: Enable Library of Congress data fusion (default: True)
         """
         self.ollama = ollama_client
         self.variant_priority = variant_priority or ["id", "title_author"]
         self.ty_similarity_threshold = ty_similarity_threshold
+        self.enable_loc = enable_loc
 
     @staticmethod
     def calculate_title_similarity(title1: str, title2: str) -> float:
@@ -212,20 +215,29 @@ class FusionEngine:
         self,
         vdeh: Dict,
         dnb_id: Optional[Dict],
-        dnb_ta: Optional[Dict]
+        dnb_ta: Optional[Dict],
+        loc_id: Optional[Dict] = None,
+        loc_ta: Optional[Dict] = None
     ) -> str:
         """
-        Build AI prompt for variant selection.
+        Build AI prompt for variant selection including LoC data.
 
         Args:
             vdeh: VDEH record dictionary
             dnb_id: DNB ID-based variant dictionary (or None)
             dnb_ta: DNB title/author-based variant dictionary (or None)
+            loc_id: LoC ID-based variant dictionary (or None)
+            loc_ta: LoC title/author-based variant dictionary (or None)
 
         Returns:
             Formatted prompt string
         """
-        return f"""Du bist ein erfahrener Bibliothekar. Prüfe welche DNB-Variante am besten zu VDEH passt oder ob keine passt.
+        # Build prompt based on available data sources
+        has_loc = loc_id is not None or loc_ta is not None
+
+        if not has_loc:
+            # Original DNB-only prompt
+            return f"""Du bist ein erfahrener Bibliothekar. Prüfe welche DNB-Variante am besten zu VDEH passt oder ob keine passt.
 
 REGELN:
 1. ENTSCHEIDUNGSKRITERIEN: Titel + Autoren dominieren. Jahr ±2 oder fehlend ist OK. Verlag tolerant.
@@ -250,16 +262,52 @@ A - [Begründung]
 B - [Begründung]
 KEINE - [Begründung warum keine passt]
 A&B - [Begründung warum beide gleich gut sind, ID bevorzugt]"""
+        else:
+            # Extended prompt with DNB + LoC
+            return f"""Du bist ein erfahrener Bibliothekar. Prüfe welche Variante (DNB oder LoC) am besten zu VDEH passt oder ob keine passt.
+
+REGELN:
+1. ENTSCHEIDUNGSKRITERIEN: Titel + Autoren dominieren. Jahr ±2 oder fehlend ist OK. Verlag tolerant.
+2. SCHREIBWEISEN: Ignoriere Groß-/Kleinschreibung, geringfügige Varianten, Abkürzungen.
+3. PRIORITÄT: DNB für deutschsprachige Werke, LoC für englischsprachige Werke.
+4. ID-VARIANTEN bevorzugen (ISBN/ISSN) gegenüber Titel/Autor-Varianten.
+5. WENN NUR EINE passt: wähle diese.
+6. WENN KEINE passt: entscheide KEINE.
+7. EIN 'KEINE' nur bei klar unterschiedlichen Werken (Titel UND Autoren deutlich verschieden).
+8. Fehlende Felder alleine NIE als Ablehnungsgrund.
+
+DATENSATZ VDEH:
+{format_record_for_display(vdeh)}
+
+DNB-VARIANTE A (ID-basiert):
+{format_record_for_display(dnb_id)}
+
+DNB-VARIANTE B (Titel/Autor-basiert):
+{format_record_for_display(dnb_ta)}
+
+LOC-VARIANTE C (ID-basiert):
+{format_record_for_display(loc_id)}
+
+LOC-VARIANTE D (Titel/Autor-basiert):
+{format_record_for_display(loc_ta)}
+
+Antworte NUR mit einem dieser Formate:
+A - [Begründung]
+B - [Begründung]
+C - [Begründung]
+D - [Begründung]
+KEINE - [Begründung warum keine passt]
+(bei mehreren passenden: bevorzuge ID > TA, DNB für de/ger > LoC für en/eng)"""
 
     def parse_ai_choice(self, response: Optional[str]) -> Tuple[str, str]:
         """
-        Parse AI response to extract variant choice.
+        Parse AI response to extract variant choice (including LoC variants).
 
         Args:
             response: AI response string
 
         Returns:
-            Tuple of (choice, reason) where choice is 'A', 'B', or 'KEINE'
+            Tuple of (choice, reason) where choice is 'A', 'B', 'C', 'D', or 'KEINE'
         """
         if not response:
             return 'KEINE', 'KI keine Antwort'
@@ -278,6 +326,14 @@ A&B - [Begründung warum beide gleich gut sind, ID bevorzugt]"""
             reason = response.split('-', 1)[1].strip() if '-' in response else ''
             return 'B', reason
 
+        if r.startswith('C ') or r.startswith('C-') or r.startswith('C\n') or r == 'C':
+            reason = response.split('-', 1)[1].strip() if '-' in response else ''
+            return 'C', reason
+
+        if r.startswith('D ') or r.startswith('D-') or r.startswith('D\n') or r == 'D':
+            reason = response.split('-', 1)[1].strip() if '-' in response else ''
+            return 'D', reason
+
         if r.startswith('KEINE') or r.startswith('KEIN'):
             reason = response.split('-', 1)[1].strip() if '-' in response else ''
             return 'KEINE', reason if reason else 'Keine Variante passt'
@@ -287,7 +343,7 @@ A&B - [Begründung warum beide gleich gut sind, ID bevorzugt]"""
 
     def merge_record(self, row: pd.Series) -> FusionResult:
         """
-        Merge a single record with AI-based variant selection.
+        Merge a single record with AI-based variant selection (DNB + LoC).
 
         Args:
             row: Pandas Series containing record data
@@ -324,7 +380,6 @@ A&B - [Begründung warum beide gleich gut sind, ID bevorzugt]"""
             'pages': row.get('dnb_pages_ta')
         }
 
-        # Extract DNB Title/Year variant (NEW - Fallback for records without ISBN/ISSN/Authors)
         dnb_ty = {
             'title': row.get('dnb_title_ty'),
             'authors': row.get('dnb_authors_ty'),
@@ -333,20 +388,60 @@ A&B - [Begründung warum beide gleich gut sind, ID bevorzugt]"""
             'pages': row.get('dnb_pages_ty')
         }
 
+        # Extract LoC variants (if enabled)
+        loc_id = None
+        loc_ta = None
+        loc_ty = None
+
+        if self.enable_loc:
+            loc_id = {
+                'title': row.get('loc_title'),
+                'authors': row.get('loc_authors'),
+                'year': row.get('loc_year'),
+                'publisher': row.get('loc_publisher'),
+                'pages': row.get('loc_pages')
+            }
+
+            loc_ta = {
+                'title': row.get('loc_title_ta'),
+                'authors': row.get('loc_authors_ta'),
+                'year': row.get('loc_year_ta'),
+                'publisher': row.get('loc_publisher_ta'),
+                'pages': row.get('loc_pages_ta')
+            }
+
+            loc_ty = {
+                'title': row.get('loc_title_ty'),
+                'authors': row.get('loc_authors_ty'),
+                'year': row.get('loc_year_ty'),
+                'publisher': row.get('loc_publisher_ty'),
+                'pages': row.get('loc_pages_ty')
+            }
+
         # Check if variants are actually available
-        id_available = any(pd.notna(dnb_id[f]) for f in dnb_id)
-        ta_available = any(pd.notna(dnb_ta[f]) for f in dnb_ta)
-        ty_available = any(pd.notna(dnb_ty[f]) for f in dnb_ty)
+        dnb_id_available = any(pd.notna(dnb_id[f]) for f in dnb_id)
+        dnb_ta_available = any(pd.notna(dnb_ta[f]) for f in dnb_ta)
+        dnb_ty_available = any(pd.notna(dnb_ty[f]) for f in dnb_ty)
 
-        if not id_available:
+        loc_id_available = self.enable_loc and loc_id and any(pd.notna(loc_id[f]) for f in loc_id)
+        loc_ta_available = self.enable_loc and loc_ta and any(pd.notna(loc_ta[f]) for f in loc_ta)
+        loc_ty_available = self.enable_loc and loc_ty and any(pd.notna(loc_ty[f]) for f in loc_ty)
+
+        if not dnb_id_available:
             dnb_id = None
-        if not ta_available:
+        if not dnb_ta_available:
             dnb_ta = None
-        if not ty_available:
+        if not dnb_ty_available:
             dnb_ty = None
+        if not loc_id_available:
+            loc_id = None
+        if not loc_ta_available:
+            loc_ta = None
+        if not loc_ty_available:
+            loc_ty = None
 
-        # Case 1: No DNB data available at all
-        if dnb_id is None and dnb_ta is None and dnb_ty is None:
+        # Case 1: No external data available at all (neither DNB nor LoC)
+        if dnb_id is None and dnb_ta is None and dnb_ty is None and loc_id is None and loc_ta is None and loc_ty is None:
             return FusionResult(
                 title=vdeh_data['title'],
                 authors=vdeh_data['authors'],
@@ -449,13 +544,13 @@ A&B - [Begründung warum beide gleich gut sind, ID bevorzugt]"""
 
             return result
 
-        # Case 2: ID or TA (or both) available - use AI for selection
+        # Case 2: ID or TA (DNB/LoC or both) available - use AI for selection
         ai_response = self.ollama.query(
-            self.build_ai_prompt(vdeh_data, dnb_id, dnb_ta)
+            self.build_ai_prompt(vdeh_data, dnb_id, dnb_ta, loc_id, loc_ta)
         )
         choice, reason = self.parse_ai_choice(ai_response)
 
-        # Case 3: AI rejects both variants
+        # Case 3: AI rejects all variants
         if choice == 'KEINE':
             return FusionResult(
                 title=vdeh_data['title'],
@@ -473,9 +568,15 @@ A&B - [Begründung warum beide gleich gut sind, ID bevorzugt]"""
                 rejection_reason=reason,
             )
 
-        # Case 4: AI selected a variant
-        selected_variant = 'id' if choice == 'A' else 'title_author'
-        selected_data = dnb_id if selected_variant == 'id' else dnb_ta
+        # Case 4: AI selected a variant (A=DNB-ID, B=DNB-TA, C=LoC-ID, D=LoC-TA)
+        variant_mapping = {
+            'A': ('dnb_id', dnb_id),
+            'B': ('dnb_title_author', dnb_ta),
+            'C': ('loc_id', loc_id),
+            'D': ('loc_title_author', loc_ta),
+        }
+
+        selected_variant, selected_data = variant_mapping.get(choice, ('id', dnb_id))
 
         # Validate DNB match (zusätzliche Sicherheit gegen False Positives)
         is_valid, validation_reason = self.validate_dnb_match(vdeh_data, selected_data)
