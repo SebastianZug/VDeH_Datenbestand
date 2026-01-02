@@ -1,0 +1,19 @@
+{
+  "vdeh_basis": {
+    "total": 58305,
+    "mit_pages": 28132,
+    "avg_pages": 196,
+    "estimated_total_pages": 11472681
+  },
+  "ub_v1": {
+    "matches": 842,
+    "zu_digitalisieren": 57463,
+    "seiten": 11307001
+  },
+  "ub_v2": {
+    "matches": 4343,
+    "zu_digitalisieren": 53962,
+    "seiten": 10618109,
+    "reduktion": 688892
+  }
+}
