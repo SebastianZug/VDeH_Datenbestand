@@ -2,7 +2,7 @@
 Parser Module für Multi-Source Bibliotheksdaten
 
 Dieses Paket enthält Parser für verschiedene bibliographische Datenformate:
-- VDEH Parser: OAI-PMH XML Format
+- VDEh Parser: OAI-PMH XML Format
 - MAB2 Parser: Deutsche Bibliotheksdaten im MAB2-Format
 """
 

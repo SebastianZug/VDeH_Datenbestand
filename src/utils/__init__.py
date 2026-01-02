@@ -1,1 +1,1 @@
-"""Utility modules for the VDEH project."""
+"""Utility modules for the VDEh project."""

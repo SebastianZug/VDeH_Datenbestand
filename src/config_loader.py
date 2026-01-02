@@ -1,5 +1,5 @@
 """
-VDEH Projekt Konfigurationsmodul
+VDEh Projekt Konfigurationsmodul
 ====================================
 
 Zentrales Modul zum Laden und Verwalten der Projektkonfiguration.
@@ -17,7 +17,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 class VDEHConfig:
-    """Zentrale Konfigurationsklasse für das VDEH-Projekt"""
+    """Zentrale Konfigurationsklasse für das VDEh-Projekt"""
     
     def __init__(self, config_path: Optional[str] = None):
         """
@@ -141,7 +141,7 @@ class VDEHConfig:
     
     def print_summary(self):
         """Gibt eine Übersicht der Konfiguration aus"""
-        logger.info("=== VDEH PROJECT CONFIGURATION ===")
+        logger.info("=== VDEh PROJECT CONFIGURATION ===")
         logger.info(f"Project: {self.config['project']['name']} v{self.config['project']['version']}")
         logger.info(f"Root: {self.project_root}")
         logger.info(f"Config: {self.config_path}")

@@ -1,5 +1,5 @@
 """
-Notebook Utilities for VDEH Project
+Notebook Utilities for VDEh Project
 ====================================
 
 Common setup functions for Jupyter notebooks to reduce code duplication.

@@ -1,6 +1,6 @@
 """
-VDEH Pipeline Runner
-Führt die VDEH-Analyse-Pipeline in der korrekten Reihenfolge aus.
+VDEh Pipeline Runner
+Führt die VDEh-Analyse-Pipeline in der korrekten Reihenfolge aus.
 """
 import sys
 from pathlib import Path
@@ -18,11 +18,11 @@ VDEH_NOTEBOOKS = [
     "notebooks/01_vdeh_preprocessing/02_vdeh_data_preprocessing.ipynb",
     "notebooks/01_vdeh_preprocessing/03_vdeh_language_detection.ipynb",
     "notebooks/01_vdeh_preprocessing/04_vdeh_data_enrichment.ipynb",
-    "notebooks/01_vdeh_preprocessing/05_vdeh_data_fusion.ipynb"
+    "notebooks/01_vdeh_preprocessing/05_vdeh_dnb_loc_fusion.ipynb"
 ]
 
 def run_vdeh_pipeline():
-    """Führt die VDEH-Analyse Pipeline aus."""
+    """Führt die VDEh-Analyse Pipeline aus."""
     executor = NotebookExecutor(
         pipeline_name="vdeh",
         notebooks=VDEH_NOTEBOOKS,

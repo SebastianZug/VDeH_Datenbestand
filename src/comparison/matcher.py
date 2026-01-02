@@ -1,8 +1,8 @@
 """
 Comparison Module für Bibliotheksbestandsvergleich
 
-Dieses Modul implementiert verschiedene Matching-Strategien um 
-VDEH-Neuerwerbungen mit dem UB TUBAF-Bestand zu vergleichen.
+Dieses Modul implementiert verschiedene Matching-Strategien um
+VDEh-Neuerwerbungen mit dem UB TUBAF-Bestand zu vergleichen.
 """
 
 import pandas as pd
@@ -24,7 +24,7 @@ class MatchResult:
 
 class BookMatcher:
     """
-    Haupt-Klasse für den Bestandsvergleich zwischen VDEH und UB TUBAF
+    Haupt-Klasse für den Bestandsvergleich zwischen VDEh und UB TUBAF
     
     Implementiert verschiedene Matching-Strategien:
     - ISBN-basiertes Matching (exakt und normalisiert)
@@ -57,17 +57,17 @@ class BookMatcher:
     
     def compare_collections(self, vdeh_df: pd.DataFrame, ub_df: pd.DataFrame) -> pd.DataFrame:
         """
-        Führt einen vollständigen Vergleich zwischen VDEH und UB TUBAF durch
-        
+        Führt einen vollständigen Vergleich zwischen VDEh und UB TUBAF durch
+
         Args:
-            vdeh_df: VDEH Neuerwerbungen DataFrame
+            vdeh_df: VDEh Neuerwerbungen DataFrame
             ub_df: UB TUBAF Bestand DataFrame
             
         Returns:
             DataFrame mit Match-Ergebnissen
         """
         self.logger.info(f"🔍 === BESTANDSVERGLEICH GESTARTET ===")
-        self.logger.info(f"📚 VDEH Records: {len(vdeh_df):,}")
+        self.logger.info(f"📚 VDEh Records: {len(vdeh_df):,}")
         self.logger.info(f"🏛️  UB TUBAF Records: {len(ub_df):,}")
         
         self.match_stats['total_vdeh'] = len(vdeh_df)
@@ -128,7 +128,7 @@ class BookMatcher:
             
             self.logger.info(f"\n✅ === VERGLEICH ABGESCHLOSSEN ===")
             self.logger.info(f"📊 Gefundene Matches: {len(matches_df):,}")
-            self.logger.info(f"📈 Match-Rate: {len(matches_df)/len(vdeh_df)*100:.1f}% der VDEH Records")
+            self.logger.info(f"📈 Match-Rate: {len(matches_df)/len(vdeh_df)*100:.1f}% der VDEh Records")
             
         else:
             matches_df = pd.DataFrame()
@@ -424,7 +424,7 @@ class BookMatcher:
         return SequenceMatcher(None, text1, text2).ratio()
     
     def _deduplicate_matches(self, matches: List[MatchResult]) -> List[MatchResult]:
-        """Entfernt Duplikate aus Match-Liste, behält besten Match pro VDEH-Record"""
+        """Entfernt Duplikate aus Match-Liste, behält besten Match pro VDEh-Record"""
         match_dict = {}
         
         for match in matches:
@@ -441,7 +441,7 @@ class BookMatcher:
     
     def analyze_gaps(self, vdeh_df: pd.DataFrame, matches_df: pd.DataFrame) -> Dict:
         """
-        Analysiert Erwerbungslücken (VDEH Records ohne Match im UB-Bestand)
+        Analysiert Erwerbungslücken (VDEh Records ohne Match im UB-Bestand)
         """
         if matches_df.empty:
             gaps_df = vdeh_df.copy()

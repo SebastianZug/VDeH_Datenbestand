@@ -1,429 +1,286 @@
 # Dual-Source Bibliothek Bestandsvergleich
 
-**Version 2.3.0** | KI-gestützte bibliographische Datenanreicherung und -fusion
+**Version 2.4.0** | KI-gestützte bibliographische Datenanreicherung und -fusion
 
 ## 📋 Übersicht
 
-Dieses Projekt führt einen systematischen Vergleich zwischen VDEH-Neuerwerbungen und dem UB TUBAF-Bestand durch. Der Fokus liegt auf der **intelligenten Datenanreicherung** über die Deutsche Nationalbibliothek (DNB) API und der **KI-gestützten Datenfusion** zur Qualitätsverbesserung bibliographischer Metadaten.
+Dieses Projekt führt einen systematischen Vergleich zwischen VDEh-Neuerwerbungen und dem UB TUBAF-Bestand durch. Der Fokus liegt auf der **intelligenten Datenanreicherung** über die Deutsche Nationalbibliothek (DNB) und Library of Congress (LOC) APIs sowie der **KI-gestützten Datenfusion** zur Qualitätsverbesserung bibliographischer Metadaten.
 
 ### Hauptmerkmale
 
-- 🔍 **Triple-Strategy DNB-Anreicherung**: ISBN/ISSN + Titel/Autor + Titel/Jahr
+- 🔍 **Multi-Source DNB/LOC-Anreicherung**: ISBN/ISSN-basiert (DNB) + Standortdaten (LOC)
 - 🤖 **KI-gestützte Fusion**: Ollama LLM (llama3.3:70b) für intelligente Variantenauswahl
+- 📚 **Dual-Source Bestandsvergleich**: VDEh-Neuerwerbungen vs. UB TUBAF-Bestand
 - 📊 **Datenqualitätsanalyse**: Umfassende Qualitätsmetriken und Konfliktdetektion
-- 📚 **ISBN/ISSN/Pages-Extraktion**: Automatische Identifier- und Seitenzahlen-Anreicherung
+- 📖 **Standort-Anreicherung**: LOC Holding-Informationen für identifizierte ISBNs
 - 🔄 **Inkrementelle Verarbeitung**: Progressive Speicherung und Wiederaufnahme
-- 📖 **Pages-Validierung**: Seitenzahlen als zusätzliches Validierungskriterium (±10% Toleranz) **NEU in v2.3!**
 - 🧹 **ISBN-Cleanup**: Automatische Erkennung und Bereinigung doppelter ISBNs
 
 ---
 
 ## 🏗️ Projektstruktur
 
-\`\`\`
+```
 analysis/
 ├── src/                          # Source Code Module
-│   ├── parsers/                  # VDEH & MAB2 Parser
+│   ├── parsers/                  # Parser für verschiedene Formate
+│   │   ├── marc21_parser.py     # VDEh MARC21 Parser
+│   │   ├── mab2_parser.py       # UB TUBAF MAB2 Parser
+│   │   └── base_parser.py       # Basis-Parser-Klasse
 │   ├── fusion/                   # KI-Fusion Engine
 │   │   ├── fusion_engine.py     # Haupt-Fusion-Logik
+│   │   ├── ollama_client.py     # Ollama LLM Client
 │   │   └── utils.py             # Normalisierung & Vergleich
+│   ├── comparison/               # Bestandsvergleich
+│   │   └── matcher.py           # ISBN/Fuzzy Matching
 │   ├── utils/                    # Utilities
 │   │   └── notebook_utils.py    # Shared Notebook Setup
-│   └── dnb_api.py               # DNB SRU API Client
+│   ├── dnb_api.py               # DNB SRU API Client
+│   └── loc_api.py               # Library of Congress API Client
 │
 ├── notebooks/                    # Jupyter Notebooks
-│   ├── 01_vdeh_preprocessing/   # VDEH Verarbeitungspipeline
-│   └── 02_vdeh_analysis/        # Qualitätsanalysen
+│   ├── 01_vdeh_preprocessing/   # VDEh Verarbeitungspipeline
+│   │   ├── 01_vdeh_data_loading.ipynb
+│   │   ├── 02_vdeh_data_preprocessing.ipynb
+│   │   ├── 03_vdeh_language_detection.ipynb
+│   │   ├── 04_vdeh_data_enrichment.ipynb (DNB)
+│   │   ├── 04b_vdeh_loc_enrichment.ipynb (LOC)
+│   │   └── 05_vdeh_dnb_loc_fusion.ipynb
+│   └── 02_ub_comparision/       # UB TUBAF & Vergleich
+│       ├── 01_ub_data_loading.ipynb
+│       └── 02_vdeh_ub_collection_check.ipynb
 │
 ├── data/                        # Datenverzeichnisse
-│   ├── vdeh/                    # VDEH Daten (OAI-PMH XML)
+│   ├── vdeh/                    # VDEh Daten (MARC21 XML)
+│   │   ├── raw/                 # Rohdaten (marcVDEH.xml)
+│   │   └── processed/           # Verarbeitete Parquet-Dateien
 │   ├── ub_tubaf/                # UB TUBAF Daten (MAB2)
+│   │   ├── raw/                 # Rohdaten (027out.t)
+│   │   └── processed/           # Verarbeitete Parquet-Dateien
 │   └── comparison/              # Vergleichsergebnisse
+│       ├── matches/
+│       ├── gaps/
+│       └── reports/
+│
+├── scripts/                     # Test- und Analyse-Scripts
+│   ├── test_fusion_engine.py
+│   ├── test_enrichment_logic.py
+│   ├── generate_paper_stats.py
+│   └── compare_dnb_strategies.py
+│
+├── docs/                        # Dokumentation
+│   ├── PROJECT_STRUCTURE.md     # Detaillierte Projektstruktur
+│   └── multi_source_fusion_plan.md
 │
 └── config.yaml                  # Zentrale Konfiguration
-\`\`\`
+```
 
 ---
 
 ## 🔄 Verarbeitungspipeline
 
-### Gesamtübersicht
+### VDEh Pipeline (notebooks/01_vdeh_preprocessing/)
 
-\`\`\`mermaid
+```mermaid
 flowchart TB
-    Start([VDEH XML Rohdaten<br/>58,760 Records]) --> Parse
+    Start([MARC21 XML<br/>58,305 Records]) --> Load
 
-    subgraph "Phase 1: Preprocessing"
-        Parse[01 XML Parsing<br/>MAB2 Feldextraktion] --> Valid
-        Valid[02 ISBN/ISSN<br/>Validierung] --> Lang
-        Lang[03 Sprach-<br/>erkennung]
-    end
+    Load[01 Data Loading<br/>MARC21 Parser] --> Prep
+    Prep[02 Data Preprocessing<br/>ISBN/ISSN Validierung] --> Lang
+    Lang[03 Language Detection<br/>Spracherkennung] --> DNB
 
-    subgraph "Phase 2: DNB Enrichment"
-        Lang --> DNB_ID
-        DNB_ID[04a DNB API<br/>ISBN/ISSN Suche] --> DNB_TA
-        DNB_TA[04b DNB API<br/>Titel/Autor Suche<br/>4-stufige Strategie]
+    DNB[04 DNB Enrichment<br/>ISBN/ISSN-basierte Suche] --> LOC
+    LOC[04b LOC Enrichment<br/>Holdings-Informationen] --> Fusion
 
-        DNB_ID -.->|Extrahiert| ISBN_Extract[ISBN/ISSN aus<br/>MARC21 Response]
-        DNB_TA -.->|Extrahiert| ISBN_Extract
-    end
-
-    subgraph "Phase 3: KI-Fusion"
-        DNB_TA --> Fusion
-        ISBN_Extract --> Fusion
-        Fusion[05 KI-Fusion<br/>Ollama LLM] --> Compare
-        Compare{Varianten<br/>vergleichen} -->|ID-Variante| Accept1[✓ Akzeptieren]
-        Compare -->|TA-Variante| Accept2[✓ Akzeptieren]
-        Compare -->|Keine passend| Reject[✗ Verwerfen]
-
-        Accept1 --> Normalize
-        Accept2 --> Normalize
-        Normalize[String-<br/>Normalisierung] --> Final
-    end
-
-    Final([Fusionierte Daten<br/>Angereichert + Validiert])
+    Fusion[05 DNB/LOC Fusion<br/>KI-gestützte Integration] --> Final([Fusionierte Daten<br/>Angereichert + Validiert])
 
     style Start fill:#e1f5ff
     style Final fill:#c8e6c9
     style Fusion fill:#fff9c4
-    style Compare fill:#ffe0b2
-\`\`\`
+```
+
+### UB TUBAF Pipeline (notebooks/02_ub_comparision/)
+
+```mermaid
+flowchart TB
+    Start([MAB2 Format<br/>UB TUBAF Bestand]) --> Load
+
+    Load[01 UB Data Loading<br/>MAB2 Parser] --> Compare
+
+    Compare[02 Collection Check<br/>VDEh vs. UB Matching] --> Results([Vergleichsergebnisse<br/>Dubletten + Gaps])
+
+    style Start fill:#e1f5ff
+    style Results fill:#c8e6c9
+```
 
 ---
 
 ## 📚 Detaillierte Verarbeitungsschritte
 
-### 1. XML Parsing & Feldextraktion
+### 1. VDEh Data Loading (01_vdeh_data_loading.ipynb)
 
-**Notebook:** \`01_vdeh_xml_parsing.ipynb\`
+**Input:** `data/vdeh/raw/marcVDEH.xml` (MARC21 Format)
+**Output:** `data/vdeh/processed/01_parsed_data.parquet`
+**Records:** 58,305
 
-\`\`\`mermaid
-flowchart LR
-    XML[VDEH XML<br/>OAI-PMH Format] --> Parser[MAB2 Parser]
-    Parser --> Fields[Feldextraktion]
+**Extraktion:**
+- Titel (MARC 245$a)
+- Autoren (MARC 100/700)
+- Jahr (MARC 260/264$c)
+- Verlag (MARC 260/264$b)
+- ISBN (MARC 020$a)
+- ISSN (MARC 022$a)
+- Seitenzahl (MARC 300$a)
 
-    Fields --> T[Titel<br/>MAB 331]
-    Fields --> A[Autoren<br/>MAB 100/104]
-    Fields --> Y[Jahr<br/>MAB 425]
-    Fields --> P[Verlag<br/>MAB 412]
-    Fields --> I[ISBN<br/>MAB 540]
-    Fields --> S[ISSN<br/>MAB 542]
+### 2. Data Preprocessing (02_vdeh_data_preprocessing.ipynb)
 
-    T --> DF[DataFrame]
-    A --> DF
-    Y --> DF
-    P --> DF
-    I --> DF
-    S --> DF
-\`\`\`
+**Output:** `data/vdeh/processed/02_preprocessed_data.parquet`
 
-**Input:** \`data/vdeh/raw/VDEH_mab_all.xml\`  
-**Output:** \`data/vdeh/processed/01_parsed_data.parquet\`  
-**Records:** 58,760
-
----
-
-### 2. ISBN/ISSN Validierung
-
-**Notebook:** \`02_vdeh_isbn_validation.ipynb\`
-
-- Strukturvalidierung (10-/13-stellig für ISBN, 8-stellig für ISSN)
+- ISBN/ISSN Strukturvalidierung
 - Prüfziffernvalidierung
 - Normalisierung (Entfernung von Bindestrichen)
-- Status-Klassifikation: \`valid\`, \`invalid\`, \`missing\`
+- ISBN-Cleanup (Aufspalten konkatenierter ISBNs)
+- Status-Klassifikation: `valid`, `invalid`, `missing`
 
-**Output:** \`data/vdeh/processed/02_isbn_validated_data.parquet\`
+### 3. Language Detection (03_vdeh_language_detection.ipynb)
 
----
-
-### 3. Spracherkennung
-
-**Notebook:** \`03_vdeh_language_detection.ipynb\`
+**Output:** `data/vdeh/processed/03_language_detected_data.parquet`
 
 - Titelbasierte Spracherkennung (langdetect)
 - Confidence Scores
-- Support für 11 Sprachen (DE, EN, FR, ES, IT, NL, PT, RU, PL, CS, etc.)
+- Support für 11 Sprachen (DE, EN, FR, ES, IT, NL, PT, RU, PL, CS)
 
-**Output:** \`data/vdeh/processed/03_language_detected_data.parquet\`
+### 4. DNB Enrichment (04_vdeh_data_enrichment.ipynb)
 
----
+**Output:** `data/vdeh/processed/04_dnb_enriched_data.parquet`
 
-### 4. DNB API Enrichment
+**Strategie:** ISBN/ISSN-basierte DNB SRU API Suche
 
-**Notebook:** \`04_vdeh_data_enrichment.ipynb\`
-
-#### 4a. ISBN/ISSN-basierte Suche
-
-\`\`\`mermaid
+```mermaid
 flowchart TB
-    Start[VDEH Record] --> HasID{Hat ISBN<br/>oder ISSN?}
+    Start[VDEh Record] --> HasID{Hat ISBN<br/>oder ISSN?}
     HasID -->|Ja| Query[DNB SRU API<br/>isbn=xxx ODER issn=xxx]
-    HasID -->|Nein| SkipID[→ Titel/Autor-Suche]
+    HasID -->|Nein| Skip[Übersprungen]
 
     Query --> Parse[MARC21 Parsing]
     Parse --> Extract[Feldextraktion]
 
-    Extract --> T[Titel 245\$a]
-    Extract --> A[Autoren 100/700]
-    Extract --> Y[Jahr 260/264\$c]
-    Extract --> Pub[Verlag 260/264\$b]
-    Extract --> ISBN[📚 ISBN 020\$a]
-    Extract --> ISSN[📰 ISSN 022\$a]
+    Extract --> Store[(DNB-Anreicherung<br/>Titel, Autoren, Jahr<br/>Verlag, ISBN, ISSN<br/>Seitenzahl)]
 
-    T --> Store[(DNB ID-Variante<br/>dnb_title<br/>dnb_authors<br/>dnb_year<br/>dnb_publisher<br/>dnb_isbn ✨<br/>dnb_issn ✨)]
-    A --> Store
-    Y --> Store
-    Pub --> Store
-    ISBN --> Store
-    ISSN --> Store
-
-    style ISBN fill:#fff59d
-    style ISSN fill:#fff59d
     style Store fill:#c8e6c9
-\`\`\`
+```
 
-**Erfolgsrate:** ~55% (6,232 von 11,383 Queries)
+**Erfolgsrate:** ~55% der Queries mit Treffern
 
-#### 4b. Titel/Autor-basierte Suche (4-stufige Strategie)
+### 4b. LOC Enrichment (04b_vdeh_loc_enrichment.ipynb)
 
-\`\`\`mermaid
+**Output:** `data/vdeh/processed/04b_loc_enriched_data.parquet`
+
+**Strategie:** Library of Congress Holdings API
+
+- Standortinformationen für ISBNs
+- Bibliotheks-Holdings weltweit
+- Verfügbarkeitsdaten
+
+### 5. DNB/LOC Fusion (05_vdeh_dnb_loc_fusion.ipynb)
+
+**Output:** `data/vdeh/processed/05_fused_data.parquet`
+**Engine:** `src/fusion/fusion_engine.py`
+
+```mermaid
 flowchart TB
-    Start[VDEH Record<br/>mit Titel + Autor] --> S1
+    Start[VDEh + DNB + LOC<br/>Daten] --> Prepare
 
-    S1[Strategie 1:<br/>tit="Exact Title" AND per=Author]
-    S1 -->|Gefunden| Extract
-    S1 -->|Nicht gefunden| S2
-
-    S2[Strategie 2:<br/>tit=Title Words AND per=Author]
-    S2 -->|Gefunden| Extract
-    S2 -->|Nicht gefunden| S3
-
-    S3[Strategie 3:<br/>tit="Exact Title"]
-    S3 -->|Gefunden| Extract
-    S3 -->|Nicht gefunden| S4
-
-    S4[Strategie 4:<br/>tit=Title Words]
-    S4 -->|Gefunden| Extract
-    S4 -->|Nicht gefunden| Fail[❌ Nicht gefunden]
-
-    Extract[MARC21 Extraktion] --> Store[(DNB TA-Variante<br/>dnb_title_ta<br/>dnb_authors_ta<br/>dnb_year_ta<br/>dnb_publisher_ta<br/>dnb_isbn_ta ✨<br/>dnb_issn_ta ✨)]
-
-    style S1 fill:#e3f2fd
-    style S2 fill:#e3f2fd
-    style S3 fill:#e3f2fd
-    style S4 fill:#e3f2fd
-    style Store fill:#c8e6c9
-\`\`\`
-
-**Erfolgsrate:** ~64% (5,730 von 8,901 Queries)
-
-**Neu in v2.0:** ISBN/ISSN-Extraktion aus DNB-Antworten für **massiven Identifier-Gewinn**!
-
-**Output:** \`data/vdeh/processed/04_dnb_enriched_data.parquet\`
-
----
-
-### 5. KI-gestützte Datenfusion
-
-**Notebook:** \`05_vdeh_data_fusion.ipynb\`  
-**Engine:** \`src/fusion/fusion_engine.py\`
-
-#### Fusionslogik
-
-\`\`\`mermaid
-flowchart TB
-    Start[VDEH Record +<br/>2 DNB-Varianten] --> HasDNB{DNB-Daten<br/>vorhanden?}
-
-    HasDNB -->|Nein| Keep[VDEH beibehalten]
-    HasDNB -->|Ja| Prepare
-
-    Prepare[Konflikte & Bestätigungen<br/>identifizieren] --> AI
+    Prepare[Konflikte &<br/>Bestätigungen identifizieren] --> AI
 
     AI[🤖 Ollama LLM<br/>llama3.3:70b] --> Decision{KI-Entscheidung}
 
-    Decision -->|ID-Variante| UseID[ID-Variante verwenden]
-    Decision -->|TA-Variante| UseTA[TA-Variante verwenden]
-    Decision -->|KEINE| Reject[❌ Match verwerfen<br/>VDEH beibehalten]
+    Decision -->|DNB-Variante| UseDNB[DNB verwenden]
+    Decision -->|LOC-Variante| UseLOC[LOC verwenden]
+    Decision -->|KEINE| Reject[VDEh beibehalten]
 
-    UseID --> Norm[String-Normalisierung]
-    UseTA --> Norm
+    UseDNB --> Norm[String-Normalisierung]
+    UseLOC --> Norm
 
-    Norm --> Check[Konfliktprüfung<br/>nach Normalisierung]
-    Check --> Resolve[Intelligente<br/>Konfliktauflösung]
-
-    Resolve --> Final[(Fusioniertes Record<br/>+ Metadaten)]
+    Norm --> Final[(Fusioniertes Record<br/>+ Metadaten)]
     Reject --> Final
-    Keep --> Final
 
     style AI fill:#fff9c4
-    style Decision fill:#ffe0b2
     style Final fill:#c8e6c9
-\`\`\`
+```
 
-#### KI-Prompt Struktur
-
-Die KI erhält:
-- VDEH Original-Daten
-- DNB ID-Variante (falls vorhanden)
-- DNB TA-Variante (falls vorhanden)
-- **Konflikte:** Abweichende Felder
-- **Bestätigungen:** Übereinstimmende Felder
-
-**Entscheidungsregeln:**
+**KI-Entscheidungsregeln:**
 1. Titel + Autoren dominieren (Jahr ±2 toleriert)
-2. Bei beiden passend: ID-Variante bevorzugen
-3. Bei nur einer passend: Diese wählen
-4. Bei keiner passend: Verwerfen (nur bei klar unterschiedlichen Werken)
+2. Bei Konflikten: DNB bevorzugen (höhere Datenqualität)
+3. LOC für Standortinformationen
+4. String-Normalisierung reduziert Konflikte um ~50%
 
-#### String-Normalisierung
+### 6. UB TUBAF Data Loading (01_ub_data_loading.ipynb)
 
-\`\`\`python
-# Bibliographische Normalisierung
-- Entfernung von ¬ Marker-Zeichen
-- Normalisierung von & → "und"
-- Umlaut-Varianten: oe→ö, ae→ä, ue→ü
-- Bindestriche → Leerzeichen
-- Trailing Punctuation entfernen
-- Publisher-Locations entfernen: ": Berlin (DE)" → ""
-\`\`\`
+**Input:** `data/ub_tubaf/raw/027out.t` (MAB2 Format)
+**Output:** `data/ub_tubaf/processed/01_ub_parsed_data.parquet`
 
-**Ergebnis:** 50% Reduktion der Konflikt-Rate (58% → 29%)
+**Parser:** `src/parsers/mab2_parser.py`
 
-**Output:** \`data/vdeh/processed/05_fused_data.parquet\`
+**Extraktion:**
+- Titel (MAB 331)
+- Autoren (MAB 100/104)
+- Jahr (MAB 425)
+- ISBN (MAB 540)
+- ISSN (MAB 542)
 
----
+### 7. VDEh vs. UB Collection Check (02_vdeh_ub_collection_check.ipynb)
 
-## 📊 Qualitätsmetriken (1000-Record-Test)
+**Output:** `data/comparison/vdeh_ub_comparison.parquet`
 
-### Fusion-Qualität
+**Matching-Strategien:**
+1. **ISBN Exact Match** - Exakte ISBN-Übereinstimmung
+2. **ISBN Normalized Match** - Normalisierte ISBN
+3. **Title Fuzzy Match** - Ähnlichkeitsbasiert (≥85%)
+4. **Author-Title Combo** - Kombinierte Matching-Strategie
 
-| Metrik | Wert | Bewertung |
-|--------|------|-----------|
-| **Fusionierte Records** | 1,850 | |
-| **Akzeptierte Fusion** | 827 (44.7%) | ✅ Hohe Qualität |
-| **Verworfene Matches** | 1,023 (55.3%) | |
-| └─ Wegen leeren VDEH-Daten | 951 (93%) | ✅ Korrekt verworfen |
-| └─ Andere Gründe | 72 (7%) | ⚠️ Zu prüfen |
-| **Konflikt-Rate** | 29.2% | ✅ Nach Normalisierung |
-| **ID-Variante bevorzugt** | 97.7% | ✅ Korrekte Priorisierung |
-
-### Informationsgewinn
-
-| Feld | Vorher (VDEH) | Nachher (Fusion) | Gewinn |
-|------|---------------|------------------|--------|
-| **Titel** | 827 (100%) | 827 (100%) | +0% |
-| **Autoren** | 827 (100%) | 827 (100%) | +0% |
-| **Jahr** | 827 (100%) | 827 (100%) | +0% |
-| **Publisher** | 450 (54.4%) | 473 (57.2%) | **+2.8%** ⭐ |
-| **ISBN** (erwartet) | ~380 (46%) | ~650 (79%) | **+33%** 🚀 |
-| **ISSN** (erwartet) | ~40 (5%) | ~120 (15%) | **+10%** 🚀 |
-
-**Hauptgewinn:**
-- ✅ Verlags-Informationen (+5.1% relativ)
-- ✅ **ISBN/ISSN-Identifier** (geschätzt +3,000-4,000 neue ISBNs!)
+**Ergebnis:**
+- Dubletten zwischen VDEh und UB TUBAF
+- Gap-Analysis (einzigartige Records)
+- Matching-Qualitätsmetriken
 
 ---
 
-## 📊 VDEH Datenquellen - Vollständigkeitsvergleich
+## 📊 Datenquellen
 
-Das Projekt arbeitet mit mehreren Versionen der VDEH-Daten. Die folgende Tabelle zeigt die Vollständigkeit der wichtigsten Metadatenfelder:
+| Quelle | Format | Records | Beschreibung |
+|--------|--------|---------|--------------|
+| **VDEh** | MARC21 XML | 58,305 | Neuerwerbungen VDEh Bibliotheken |
+| **UB TUBAF** | MAB2 | TBD | Bestand UB TU Bergakademie Freiberg |
+| **DNB** | MARC21 (via SRU) | API | Deutsche Nationalbibliothek |
+| **LOC** | JSON (via API) | API | Library of Congress Holdings |
 
-| Feld | MAB (XML) | CSV (preprocessed) | MARC21 (XML) |
-|------|-----------|-------------------|--------------|
-| **TOTAL RECORDS** | 58,760 (100.0%) | 58,431 (100.0%) | **58,305 (100.0%)** |
-| **Titel** | 40,830 (69.5%) | 58,043 (99.3%) | **58,252 (99.9%)** ✅ |
-| **Autor** | 17,016 (29.0%) | 16,855 (28.8%) | **18,740 (32.1%)** ✅ |
-| **ISBN** | **10,744 (18.3%)** ✅ | 10,576 (18.1%) | 10,586 (18.2%) |
-| **ISSN** | 728 (1.2%) | 702 (1.2%) | **719 (1.2%)** |
-| **Seitenzahl** | **29,396 (50.0%)** ✅ | 0 (0.0%) ❌ | 29,080 (49.9%) |
+### VDEh Metadaten-Vollständigkeit
 
-### Datenquellen im Detail
+| Feld | Vollständigkeit | Quelle |
+|------|----------------|--------|
+| **Titel** | 99.9% (58,252) | MARC 245$a |
+| **Autoren** | 32.1% (18,740) | MARC 100/700 |
+| **Jahr** | ~95% | MARC 260/264$c |
+| **ISBN** | 18.2% (10,586) | MARC 020$a |
+| **ISSN** | 1.2% (719) | MARC 022$a |
+| **Seitenzahl** | 49.9% (29,080) | MARC 300$a |
 
-1. **VDEH_mab_all.xml (MAB Format)**
-   - Pfad: `data/vdeh/raw/VDEH_mab_all.xml`
-   - Format: MAB (Maschinelles Austauschformat für Bibliotheken)
-   - Besonderheit: Nur 69.5% haben Hauptsachtitel (Feld 331)
-   - Stärke: Beste ISBN-Abdeckung (18.3%)
-
-2. **marcBIB-VDEH-xml2-tsv.csv (Preprocessed)**
-   - Pfad: `/media/sz/Data/Bibo/data/marcBIB-VDEH-xml2-tsv.csv`
-   - Format: CSV (Tab-separated)
-   - Besonderheit: Kombiniert mehrere Titelfelder (331+335+340+655+750)
-   - Stärke: Sehr gute Titel-Vollständigkeit (99.3%)
-   - Schwäche: Keine Seitenzahl-Informationen
-
-3. **marcVDEH.xml (MARC21 Format)** ⭐ **EMPFOHLEN**
-   - Pfad: `/media/sz/Data/Bibo/data/marcVDEH.xml`
-   - Format: MARC21 (international standard)
-   - Stärke: Beste Titel-Vollständigkeit (99.9%), beste Autoren-Abdeckung (32.1%)
-   - Besonderheit: Nur 53 Records ohne Titel (0.03%)
-
-### Empfehlung
-
-**Nutze marcVDEH.xml (MARC21)** als primäre Datenquelle:
-- ✅ Beste Titel-Vollständigkeit (99.9%)
-- ✅ Standardisiertes internationales Format
-- ✅ Beste Autoren-Abdeckung (32.1%)
-- ✅ Gute Seitenzahl-Informationen (50%)
-
-**Herausforderung:** Alle Quellen haben niedrige ISBN/ISSN-Abdeckung (~18%), was DNB-Enrichment einschränkt.
-
-**Analyseskript:** `scripts/compare_all_sources.py`
+**Herausforderung:** Niedrige ISBN/ISSN-Abdeckung → DNB/LOC Enrichment essentiell
 
 ---
 
-## 🔧 Technische Details
+## 🔧 Setup & Installation
 
-### Dependencies
+### 1. Voraussetzungen
 
-\`\`\`toml
-[tool.poetry.dependencies]
-python = "^3.12"
-pandas = "^2.1.0"
-lxml = "^4.9.3"
-requests = "^2.31.0"
-langdetect = "^1.0.9"
-tqdm = "^4.66.1"
-jupyter = "^1.0.0"
-matplotlib = "^3.8.0"
-seaborn = "^0.13.0"
-pyyaml = "^6.0.1"
-ollama = "^0.1.0"
-\`\`\`
+- Python 3.10+
+- Poetry (Dependency Management)
+- Ollama (für KI-Fusion)
 
-### Konfiguration
+### 2. Installation
 
-Alle Parameter sind zentral in \`config.yaml\` konfigurierbar:
-
-\`\`\`yaml
-comparison:
-  matching_strategies:
-    - isbn_exact
-    - isbn_normalized
-    - title_fuzzy
-
-  similarity_thresholds:
-    title_fuzzy: 0.85
-    author_fuzzy: 0.90
-
-debug:
-  fusion_limit: 1000  # Für Tests
-\`\`\`
-
-### Performance
-
-- **Parallel Processing:** \`-1\` (alle CPU-Kerne)
-- **Chunk Size:** 1,000 Records
-- **Rate Limiting:** 0.5s zwischen DNB-Queries
-- **Progressive Saving:** Alle 50 Records
-
----
-
-## 📈 Verwendung
-
-### 1. Setup
-
-\`\`\`bash
+```bash
 # Repository klonen
 git clone <repo-url>
 cd analysis
@@ -434,85 +291,260 @@ poetry install
 # Ollama starten (für Fusion)
 ollama pull llama3.3:70b
 ollama serve
-\`\`\`
+```
 
-### 2. Pipeline ausführen
+### 3. Konfiguration
 
-\`\`\`bash
-# Gesamte Pipeline
-poetry run jupyter notebook notebooks/01_vdeh_preprocessing/
+Zentrale Konfiguration in `config.yaml`:
 
-# Einzelne Schritte
-poetry run jupyter notebook notebooks/01_vdeh_preprocessing/01_vdeh_xml_parsing.ipynb
-poetry run jupyter notebook notebooks/01_vdeh_preprocessing/04_vdeh_data_enrichment.ipynb
-poetry run jupyter notebook notebooks/01_vdeh_preprocessing/05_vdeh_data_fusion.ipynb
-\`\`\`
+```yaml
+# Datenquellen
+data_sources:
+  vdeh:
+    path: "data/vdeh/raw/marcVDEH.xml"
+    parser_class: "MARC21Parser"
 
-### 3. Qualitätsanalyse
+  ub_tubaf:
+    path: "data/ub_tubaf/raw/027out.t"
+    parser_class: "MAB2Parser"
 
-\`\`\`bash
-poetry run jupyter notebook notebooks/02_vdeh_analysis/04_fusion_quality_analysis.ipynb
-\`\`\`
+# API-Konfiguration
+dnb_api:
+  base_url: "https://services.dnb.de/sru/dnb"
+  rate_limit: 0.5  # Sekunden zwischen Requests
+
+loc_api:
+  base_url: "https://www.loc.gov"
+  timeout: 30
+
+# Fusion-Einstellungen
+fusion:
+  ollama_model: "llama3.3:70b"
+  confidence_threshold: 0.7
+```
 
 ---
 
-## 🤝 Mitwirkende
+## 📈 Verwendung
 
-**Data Analysis Team**  
+### Komplette VDEh Pipeline
+
+```bash
+cd notebooks/01_vdeh_preprocessing
+
+# Schritt für Schritt
+poetry run jupyter notebook 01_vdeh_data_loading.ipynb
+poetry run jupyter notebook 02_vdeh_data_preprocessing.ipynb
+poetry run jupyter notebook 03_vdeh_language_detection.ipynb
+poetry run jupyter notebook 04_vdeh_data_enrichment.ipynb
+poetry run jupyter notebook 04b_vdeh_loc_enrichment.ipynb
+poetry run jupyter notebook 05_vdeh_dnb_loc_fusion.ipynb
+```
+
+### UB TUBAF Pipeline & Vergleich
+
+```bash
+cd notebooks/02_ub_comparision
+
+poetry run jupyter notebook 01_ub_data_loading.ipynb
+poetry run jupyter notebook 02_vdeh_ub_collection_check.ipynb
+```
+
+### Batch-Verarbeitung mit Papermill
+
+```bash
+# Automatisierte Notebook-Ausführung
+poetry run papermill notebooks/01_vdeh_preprocessing/01_vdeh_data_loading.ipynb \
+  output/01_executed.ipynb \
+  -p max_records 1000
+```
+
+---
+
+## 🔍 Test-Scripts
+
+### Fusion Engine Testing
+
+```bash
+# Test der KI-Fusion-Logik
+python scripts/test_fusion_engine.py
+
+# Test der Anreicherungs-Logik
+python scripts/test_enrichment_logic.py
+
+# ISBN-Fusion-Test
+python scripts/test_isbn_fusion.py
+
+# Real-World Fusion Test
+python scripts/test_real_fusion.py
+```
+
+### DNB-Strategien-Vergleich
+
+```bash
+# Vergleich verschiedener DNB-Suchstrategien
+python scripts/compare_dnb_strategies.py
+```
+
+### Paper-Statistiken
+
+```bash
+# Generierung von Statistiken für wissenschaftliche Publikation
+python scripts/generate_paper_stats.py
+```
+
+---
+
+## 📊 Qualitätsmetriken
+
+### DNB Enrichment Erfolgsrate
+
+| Strategie | Queries | Treffer | Rate |
+|-----------|---------|---------|------|
+| ISBN/ISSN-basiert | ~11,000 | ~6,200 | 55% |
+
+### Fusion Qualität (Testdaten)
+
+| Metrik | Wert |
+|--------|------|
+| Akzeptierte Fusion | ~45% |
+| Verworfene Matches | ~55% |
+| Konflikt-Rate (nach Normalisierung) | ~29% |
+| DNB-Variante bevorzugt | ~98% |
+
+### Informationsgewinn durch Enrichment
+
+| Feld | Vorher | Nachher (geschätzt) | Gewinn |
+|------|--------|---------------------|--------|
+| **ISBN** | ~10,600 (18%) | ~14,000 (24%) | **+33%** |
+| **ISSN** | ~700 (1.2%) | ~800 (1.4%) | **+15%** |
+| **Autoren** | ~18,700 (32%) | ~18,800 (32%) | **+0.5%** |
+| **Verlag** | ~31,000 (53%) | ~31,200 (53%) | **+0.6%** |
+
+---
+
+## 🛠️ Technische Details
+
+### Dependencies (Poetry)
+
+```toml
+[tool.poetry.dependencies]
+python = "^3.10"
+pandas = "^2.0.0"
+lxml = "^6.0.2"
+pymarc = "^5.3.1"
+requests = "^2.31.0"
+langdetect = "^1.0.9"
+ollama = "^0.3.0"
+rapidfuzz = "^3.14.3"
+tqdm = "^4.66.0"
+pyyaml = "^6.0.0"
+jupyter = "^1.0.0"
+matplotlib = "^3.7.0"
+seaborn = "^0.12.0"
+```
+
+### Parser-Module
+
+**MARC21Parser** (`src/parsers/marc21_parser.py`)
+- Unterstützt MARC21 XML
+- Feldextraktion via pymarc
+- Automatisches ISBN-Cleanup
+
+**MAB2Parser** (`src/parsers/mab2_parser.py`)
+- Unterstützt MAB2 Format (Latin-1)
+- Record-basiertes Parsing
+- Feldmapping zu standardisiertem Schema
+
+### API Clients
+
+**DNB API** (`src/dnb_api.py`)
+- SRU-Interface (Search/Retrieve via URL)
+- MARC21 Response Parsing
+- Rate Limiting & Retry-Logik
+
+**LOC API** (`src/loc_api.py`)
+- Holdings API
+- JSON Response Parsing
+- Standortinformationen
+
+### Fusion Engine
+
+**FusionEngine** (`src/fusion/fusion_engine.py`)
+- Ollama LLM Integration
+- Konflikt-Detektion
+- String-Normalisierung
+- Intelligente Variantenauswahl
+
+---
+
+## 📖 Dokumentation
+
+- **Projektstruktur:** [docs/PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md)
+- **Fusion-Planung:** [docs/multi_source_fusion_plan.md](docs/multi_source_fusion_plan.md)
+- **Konfiguration:** [config.yaml](config.yaml)
+
+---
+
+## 🆕 Changelog
+
+### Version 2.4.0 (aktuell)
+
+- ✅ UB TUBAF MAB2-Parser implementiert
+- ✅ VDEh vs. UB Bestandsvergleich
+- ✅ LOC Holdings API Integration
+- ✅ DNB/LOC Fusion Pipeline
+
+### Version 2.3.0 (2025-12-30)
+
+- ⚠️ Report-Generator entfernt (Commit 39fd638)
+- ✅ Vollständige Projektstruktur-Bereinigung
+
+### Version 2.2.0 (2025-12-12)
+
+- ✅ ISBN-Cleanup (automatisches Aufspalten konkatenierter ISBNs)
+- ✅ Seitenzahlen-Extraktion (MARC 300$a)
+- ✅ Enhanced DNB Search Strategy
+
+### Version 2.1.0
+
+- ✅ Titel/Jahr DNB-Strategie
+- ✅ Similarity-Filter (70% Threshold)
+- ✅ Pages-Tracking
+
+### Version 2.0.0
+
+- ✅ KI-gestützte Fusion (Ollama)
+- ✅ Triple-Strategy DNB (ISBN/ISSN + Titel/Autor + Titel/Jahr)
+- ✅ MARC21 Parser (von MAB migriert)
+
+---
+
+## 🤝 Autoren
+
+**Data Analysis Team**
 TU Bergakademie Freiberg
+
+Kontakt: sebastian.zug@informatik.tu-freiberg.de
 
 ---
 
 ## 📄 Lizenz
 
-Dieses Projekt ist für interne Verwendung bestimmt.
+Dieses Projekt ist für interne Forschungszwecke bestimmt.
 
 ---
 
 ## 🔗 Referenzen
 
 - **DNB SRU API:** https://www.dnb.de/DE/Professionell/Metadatendienste/Datenbezug/SRU/sru_node.html
-- **OAI-PMH:** https://www.openarchives.org/pmh/
+- **Library of Congress API:** https://www.loc.gov/apis/
 - **MARC21:** https://www.loc.gov/marc/bibliographic/
+- **MAB2:** https://www.dnb.de/DE/Professionell/Standardisierung/Formate/MAB/mab_node.html
 - **Ollama:** https://ollama.ai/
 
 ---
 
 **Erstellt:** 2024-10-31
-**Letzte Aktualisierung:** 2025-12-12
-**Version:** 2.2.0
-
-## 🆕 Was ist neu in v2.2.0?
-
-### ISBN-Cleanup (Automatische Bereinigung)
-- **Problem**: 209 ungültige ISBNs (2.0%), davon 116 doppelte ISBNs
-- **Lösung**: Automatisches Aufspalten konkatenierter ISBNs im MARC21-Parser
-- **Gewinn**: ~58 zusätzliche DNB-Matches (höchste Qualität!)
-- **Transparente Integration**: Keine Code-Änderungen nötig, läuft automatisch
-- **Test-Abdeckung**: 8/8 Tests bestanden ✅
-
-### Previous: v2.1.0
-
-### Title/Year Search (Dritte DNB-Strategie) mit Similarity-Filter
-- **Neue Suchmethode**: Titel + Jahr für Records ohne ISBN/ISSN/Autoren
-- **Reichweite**: 16,458 zusätzliche Records abgefragt
-- **Similarity-Validierung**: 70% Threshold eliminiert False Positives
-- **Tatsächlicher Gewinn**:
-  - **+101 neue Autoren** (+27% Verbesserung)
-  - **+114 neue ISSN** (+90% Verbesserung)
-  - **+190 Publisher-Ergänzungen**
-- **Qualität über Quantität**: 193 hochwertige Matches (57.6% Akzeptanzrate)
-
-### Seitenzahlen-Extraktion
-- **MARC21 Field 300**: Vollständige Pages-Erfassung (49.9% Abdeckung)
-- **DNB Pages**: Extraktion aus allen drei DNB-Varianten (ID, TA, TY)
-- **Fusion**: Intelligente Pages-Quelle-Tracking
-- **Erwartete Gesamtabdeckung**: ~55-60% (nach DNB-Enrichment)
-
-### Dokumentation
-- [`docs/title_year_implementation.md`](docs/title_year_implementation.md) - Detaillierte Implementierung mit Ergebnisanalyse
-- Vollständige API-Dokumentation für alle drei Suchmethoden
-- Test-Scripts und Validierung
-- Similarity-Filter Begründung und Metriken
-
-Siehe [CHANGELOG_MARC21.md](CHANGELOG_MARC21.md) für vollständige Release Notes.
+**Letzte Aktualisierung:** 2026-01-02
+**Version:** 2.4.0

@@ -151,7 +151,7 @@ results/
 docs/_build/
 
 # ===== ZUSÄTZLICHE AUSSCHLÜSSE =====
-# Alle XML-Dateien (VDEH-Daten)
+# Alle XML-Dateien (VDEh-Daten)
 **/*.xml
 
 # Alle großen Datenexports

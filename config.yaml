@@ -5,7 +5,7 @@
 project:
   name: "Dual-Source Bibliothek Bestandsvergleich"
   version: "2.2.0"
-  description: "Vergleich zwischen VDEH-Neuerwerbungen und UB TUBAF-Bestand"
+  description: "Vergleich zwischen VDEh-Neuerwerbungen und UB TUBAF-Bestand"
   author: "Data Analysis Team"
   created: "2024-10-31"
   updated: "2025-12-13"
@@ -14,10 +14,10 @@ project:
 # MULTI-SOURCE DATENQUELLEN
 # =============================================================================
 data_sources:
-  # VDEH Neuerwerbungen (MARC21 XML) - Updated 2025-12-09
+  # VDEh Neuerwerbungen (MARC21 XML) - Updated 2025-12-09
   vdeh:
     type: "marc21_xml"
-    description: "Neuerwerbungen der VDEH Bibliotheken (MARC21 Format)"
+    description: "Neuerwerbungen der VDEh Bibliotheken (MARC21 Format)"
     path: "data/vdeh/raw/marcVDEH.xml"
     parser_module: "src/parsers/marc21_parser.py"
     parser_class: "MARC21Parser"
@@ -27,7 +27,7 @@ data_sources:
   # Legacy: MAB Format (archiviert)
   vdeh_mab_legacy:
     type: "oai_pmh_xml"
-    description: "Neuerwerbungen der VDEH Bibliotheken (MAB Format - veraltet)"
+    description: "Neuerwerbungen der VDEh Bibliotheken (MAB Format - veraltet)"
     path: "data/vdeh/raw/VDEH_mab_all.xml"
     parser_module: "src/parsers/vdeh_parser.py"
     parser_class: "VDEHParser"
@@ -57,7 +57,7 @@ paths:
   # Multi-Source Datenverzeichnisse
   data:
     root: "data"
-    # VDEH Verzeichnisse
+    # VDEh Verzeichnisse
     vdeh:
       root: "data/vdeh"
       raw: "data/vdeh/raw"
@@ -79,8 +79,8 @@ paths:
   # Notebook-Workflows
   notebooks:
     individual_analysis: "notebooks/01_individual_analysis"
-    preprocessing: "notebooks/02_preprocessing"  
-    comparison: "notebooks/03_comparison"
+    preprocessing: "notebooks/02_preprocessing"
+    comparison: "notebooks/02_ub_comparision"
   
   # Legacy-Pfade (Rückwärtskompatibilität)
   results: "data/comparison/reports"
@@ -92,7 +92,7 @@ paths:
 # =====================================
 
 data_processing:
-  # MARC21 XML-Parser Einstellungen (VDEH)
+  # MARC21 XML-Parser Einstellungen (VDEh)
   marc21_parser:
     max_records: null  # null = alle Records, oder Zahl für Testläufe
     encoding: "utf-8"
