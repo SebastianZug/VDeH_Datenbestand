@@ -1,0 +1,32 @@
+# Motivation
+
+Der Bestand von 70.000 Büchern und 90.000 Zeitschriften der VDEh-Bibliothek ist 2020 an die Technische Bergakademie Freiberg übergegangen.[^vdeh-bestand] Ein kleiner Teil dieses Bestandes wurde bereits digitalisiert.[^vdeh-digital] Aus Sicht der Universitätsbibliothek Freiberg (UB) und der Expertinnen und Experten der Fakultät 4 besteht großes Interesse daran, den VDEh-Bestand vollständig zu digitalisieren, zugänglich zu machen und mit KI-Techniken zu erschließen. 
+
+[^vdeh-bestand]: Webseite der UB Freiberg - [Link](https://tu-freiberg.de/ub/suchen-finden/sammlungen/vdeh-bestand)
+[^vdeh-digital]: Webseite Sachsen Digital - [Link](https://sachsen.digital/sammlungen/bibliothek-des-vereins-deutscher-eisenhuettenleute-vdeh)
+
+## Forschungsfragen
+
+Die Sammlung ist gegenwärtig in etwa 4.000 Kartons gelagert. Um den Digitalisierungsaufwand realistisch einschätzen zu können, sind vorab zwei wesentliche Fragen zu klären.
+
+| Forschungsfrage | Fragestellung | Begründung |
+|-----------------|---------------|------------|
+| **Frage 1: Bestandsüberschneidung** | Wie viele Bücher der VDEh-Sammlung sind bereits im Bestand der UB TU Bergakademie Freiberg vorhanden? | Dubletten bräuchten nicht übernommen zu werden, gleichzeitig könnte der Digitalisierungsaufwand durch die Eliminierung reduziert werden. |
+| **Frage 2: Digitalisierungsaufwand** | Wie viele Seiten umfasst der VDEh-Bestand, der digitalisiert werden soll? | Um den Aufwand einer Gesamtdigitalisierung abzuschätzen, ist die Gesamtseitenzahl der zu digitalisierenden Bücher erforderlich. |
+
+## Datengrundlage 
+
+Für die Beantwortung der Fragen stehen folgende Metadatenquellen zur Verfügung:
+
+- **VDEh-Bestand:** Metadaten von aus dem VDEh-Bestand existieren als MARC21 XML-Datei. Die letzte Aktualisierung der Daten erfolgte 9. November 2017.
+- **UB Freiberg Katalog:** Die Metadaten der UB mit {{ results.ub_freiberg_quality.total_records | de_num(0) }} Einträgen standen als MAB2 Datei bereit. 
+
+## Herausforderungen
+
+Die Beantwortung beider Fragen wird durch **unvollständige und heterogene Metadaten** im VDEh-Bestand erschwert:
+
+- **Fehlende ISBN-Nummern:** Nur {{ results.vdeh_quality.isbn_coverage_pct | de_num(1) }}% der Datensätze verfügen über eine ISBN
+- **Fehlende Seitenzahlen:** Bei {{ (100 - results.vdeh_quality.pages_coverage_pct) | de_num(1) }}% der Bücher fehlen Seitenzahlangaben
+- **Datenqualitätsprobleme:** Inkonsistente Formatierung und fehlerhafte Identifier
+
+Diese Lücken erfordern eine **methodische Datenanreicherung** vor dem Bestandsabgleich.

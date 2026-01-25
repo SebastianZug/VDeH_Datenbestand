@@ -1,0 +1,158 @@
+% KOMA-Script Article Template für deutsche wissenschaftliche Reports
+% Optimiert für VDEh-Bibliotheksanalyse Report
+
+\documentclass[
+  a4paper,
+  11pt,
+  toc=bibliography,
+  toc=listof,
+  numbers=noenddot,
+  parskip=half
+]{scrartcl}
+
+% Deutsche Sprachunterstützung
+\usepackage[ngerman]{babel}
+
+% Schriftarten für XeLaTeX (native UTF-8 Unterstützung)
+\usepackage{fontspec}
+\setmainfont{Latin Modern Roman}
+\setsansfont{Latin Modern Sans}
+\setmonofont[Ligatures=TeX]{Latin Modern Mono}
+
+
+% Mikrotypografie
+\usepackage{microtype}
+
+% Layout
+\usepackage[
+  left=2.5cm,
+  right=2.5cm,
+  top=2.5cm,
+  bottom=2.5cm
+]{geometry}
+
+% Grafiken und Farben
+\usepackage{graphicx}
+\usepackage{xcolor}
+\definecolor{linkcolor}{RGB}{0,68,137}
+
+% Tabellen
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{calc}
+\usepackage{xfp}
+
+% Hyperlinks
+\usepackage[
+  colorlinks=true,
+  linkcolor=linkcolor,
+  citecolor=linkcolor,
+  urlcolor=linkcolor,
+  pdfborder={0 0 0}
+]{hyperref}
+
+% Bibliographie
+\usepackage[
+  backend=biber,
+  style=authoryear,
+  sorting=nyt,
+  maxbibnames=99
+]{biblatex}
+
+% Listen
+\usepackage{enumitem}
+\setlist{noitemsep}
+
+% Code-Highlighting (falls benötigt)
+\usepackage{listings}
+\usepackage{upquote}  % Korrekte Anführungszeichen in verbatim/listings
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  frame=single,
+  xleftmargin=2em,
+  framexleftmargin=1.5em,
+  upquote=true,
+  literate={"}{\textquotedbl}1
+           {'}{\textquotesingle}1
+}
+
+% Mermaid-Diagramme (SVG/PNG Einbindung)
+\usepackage{svg}
+\usepackage{adjustbox}
+
+% Pandoc-spezifische Pakete
+\providecommand{\tightlist}{%
+  \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+
+% Metadaten aus Pandoc
+$if(title)$
+\title{$title$}
+$endif$
+
+$if(subtitle)$
+\subtitle{$subtitle$}
+$endif$
+
+$if(author)$
+\author{$for(author)$$author$$sep$ \and $endfor$}
+$endif$
+
+$if(date)$
+\date{$date$}
+$endif$
+
+% Abstract-Umgebung
+\usepackage{abstract}
+\renewcommand{\abstractname}{Abstract}
+\renewcommand{\abstractnamefont}{\normalfont\Large\bfseries}
+\renewcommand{\abstracttextfont}{\normalfont\small}
+
+% Kopf- und Fußzeilen
+\usepackage{scrlayer-scrpage}
+\pagestyle{scrheadings}
+\clearscrheadfoot
+\ohead{\pagemark}
+\ihead{\headmark}
+
+% Kapitel-/Abschnittsnummerierung
+\setcounter{secnumdepth}{3}
+$if(toc-depth)$
+\setcounter{tocdepth}{$toc-depth$}
+$else$
+\setcounter{tocdepth}{2}
+$endif$
+
+% Dokument beginnt
+\begin{document}
+
+% Titelseite
+$if(title)$
+\maketitle
+$endif$
+
+% Abstract (inline, keine separate Seite)
+$if(abstract)$
+\begin{abstract}
+\noindent
+$abstract$
+$if(keywords)$
+
+\vspace{0.5em}
+\noindent \textbf{Schlüsselwörter:} $for(keywords)$$keywords$$sep$, $endfor$
+$endif$
+\end{abstract}
+\vspace{1em}
+$endif$
+
+% Inhaltsverzeichnis
+$if(toc)$
+\tableofcontents
+\clearpage
+$endif$
+
+% Hauptinhalt
+$body$
+
+\end{document}

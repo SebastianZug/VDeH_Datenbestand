@@ -5,10 +5,11 @@ Generiert alle Abbildungen für das wissenschaftliche Paper.
 Dieses Script erstellt:
 1. Seitenzahlen-Histogramm
 
-Output: PNG und PDF Dateien in reports/paper/figures/
+Output: PNG und PDF Dateien (Standard: docs/paper/figures/)
 """
 
 import sys
+import argparse
 from pathlib import Path
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -124,13 +125,24 @@ def generate_pages_histogram(fused_df: pd.DataFrame, output_dir: Path) -> dict:
 
 def main():
     """Main function."""
+    parser = argparse.ArgumentParser(description='Generiert Paper-Abbildungen')
+    parser.add_argument('--output', default=None,
+                       help='Output-Verzeichnis (Standard: docs/paper/figures/)')
+    args = parser.parse_args()
+
     print("=" * 70)
     print("PAPER ABBILDUNGEN GENERIERUNG")
     print("=" * 70)
 
     # Paths
     data_dir = project_root / 'data' / 'vdeh' / 'processed'
-    output_dir = project_root / 'reports' / 'paper' / 'figures'
+
+    if args.output:
+        output_dir = Path(args.output)
+    else:
+        output_dir = project_root / 'docs' / 'paper' / 'figures'
+
+    print(f"\nOutput-Verzeichnis: {output_dir}")
 
     print("\n1. Lade Daten...")
     fused_df = pd.read_parquet(data_dir / '06_vdeh_dnb_loc_fused_data.parquet')

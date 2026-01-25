@@ -1,0 +1,130 @@
+# Datenanreicherung über DNB und LoC
+
+## Motivation und Strategie
+
+Die Anreicherung der VDEh-Bestandsdaten verfolgt drei zentrale Ziele: Erstens soll die Abdeckung mit ISBN- und ISSN-Nummern deutlich erhöht werden, da diese standardisierten Identifikatoren ein präzises Matching zwischen verschiedenen Bibliotheksbeständen ermöglichen. Zweitens dient die Anreicherung der Validierung bereits vorhandener Metadaten durch den Abgleich von Titel, Autor und Erscheinungsjahr mit autorisierten Quellen. Drittens werden fehlende Seitenzahlen ergänzt, die für eine fundierte Schätzung des Digitalisierungsaufwands unverzichtbar sind.
+
+Für die Auswahl geeigneter Anreicherungsquellen orientiert sich die Strategie an der Sprachverteilung des VDEh-Bestands. Die Deutsche Nationalbibliothek (DNB) wird primär für deutschsprachige Literatur herangezogen, die mit {{ results.vdeh_quality.top_languages[0][1].percentage | de_num(1) }}% den Großteil des Bestands ausmacht. Für englischsprachige Werke, die {{ results.vdeh_quality.top_languages[1][1].percentage | de_num(1) }}% umfassen, dient die Library of Congress (LoC) als maßgebliche Referenz. Beide Quellen werden über ihre SRU-APIs (Search/Retrieve via URL) angebunden und liefern bibliografische Daten im standardisierten MARC21-Format.
+
+## Methodisches Vorgehen
+
+Die Anreicherung erfolgt, wie in nachfolgender Grafik gezeigt, mit einer dreistufigen Suchstrategie für LOC und DNB:
+
++ ID-basierte Suche (ISBN/ISSN)
++ Titel + Autor Suche mit vierstufiger Fallback-Logik
+
+```{=latex}
+\begin{enumerate}
+    \item Exakter Titel + Autor: \texttt{tit=\char34 Exact Title\char34{} AND per=Author}
+    \item Titel-Wörter + Autor: \texttt{tit=Title Words AND per=Author}
+    \item Exakter Titel: \texttt{tit=\char34 Exact Title\char34}
+    \item Titel-Wörter: \texttt{tit=Title Words}
+\end{enumerate}
+```
+
++ Titel + Jahr mit Similarity-Validierung
+
+```{=latex}
+\begin{enumerate}
+    \item Exakter Titel + Jahr: \texttt{tit=\char34 Exact Title\char34{} AND date=Year}
+    \item Titel-Wörter + Jahr: \texttt{tit=Title Words AND date=Year}
+\end{enumerate}
+```
+
+Bei mehreren Anreicherungsvarianten (z.B. DNB-ID, DNB-TA, LoC-ID) entscheidet ein Large Language Model (LLM) über die finale Auswahl. Zum Einsatz kommt das lokal betriebene Modell Ollama llama3.3:70b, das neben den bibliografischen Kerndaten (Titel, Autor, Erscheinungsjahr) aus dem VDEh-Bestand und den jeweiligen Anreicherungsquellen auch eine strukturierte Konflikt- und Bestätigungsanalyse erhält. Die Entscheidungslogik priorisiert dabei Titel und Autoren als dominierende Kriterien, während Jahresabweichungen von ±2 Jahren toleriert werden. Bei mehreren gleichwertigen Varianten bevorzugt das Modell ID-basierte Treffer, während bei klaren Widersprüchen zwischen den Quellen eine konservative Strategie verfolgt wird und alle Varianten verworfen werden. Eine nachgelagerte String-Normalisierung reduziert die Konflikt-Rate nachweislich von 58% auf 29%.
+
+<figure>
+```mermaid
+flowchart TB
+    Start([VDEh Record]) --> Lang{Sprache?}
+
+    Lang -->|Deutsch| DNB_Prio[DNB priorisiert]
+    Lang -->|Englisch| LoC_Prio[LoC priorisiert]
+    Lang -->|Andere| Both[Beide Quellen]
+
+    DNB_Prio --> S1
+    LoC_Prio --> S1
+    Both --> S1
+
+    subgraph "Suchstrategien (DNB/LoC parallel)"
+        S1[Strategie 1: ISBN/ISSN-Suche]
+        S1 -->|Gefunden| Extract1[MARC21 Extraktion]
+        S1 -->|Nicht gefunden| S2
+
+        S2[Strategie 2: Titel + Autor]
+        S2 -->|Gefunden| Extract2[MARC21 Extraktion]
+        S2 -->|Nicht gefunden| S3
+
+        S3[Strategie 3: Titel + Jahr]
+        S3 -->|Gefunden| Extract3[MARC21 Extraktion]
+        S3 -->|Nicht gefunden| Fail[Keine Anreicherung]
+    end
+
+    Extract1 --> Merge[Variantenmerge]
+    Extract2 --> Merge
+    Extract3 --> Merge
+
+    Merge --> Variants{Anzahl Varianten?}
+
+    Variants -->|0| KeepVDEh[VDEh beibehalten]
+    Variants -->|1 DNB oder LoC| AutoSelect[Auto-Select beste Variante]
+    Variants -->|2+ Varianten| AI[KI-Fusion<br/>Ollama llama3.3:70b]
+
+    AI --> Decision{KI-Entscheidung}
+    Decision -->|Variante wählen| Normalize[String-Normalisierung]
+    Decision -->|Keine passend| Reject[❌ Alle verwerfen]
+
+    AutoSelect --> Normalize
+    Normalize --> Final([Angereichertes Record])
+    KeepVDEh --> Final
+    Reject --> Final
+
+    style S1 fill:#e3f2fd
+    style S2 fill:#e3f2fd
+    style S3 fill:#e3f2fd
+    style AI fill:#fff9c4
+    style Final fill:#c8e6c9
+```
+<figcaption>Abbildung: Ablauf der dreistufigen Anreicherungsstrategie mit sprachbasierter Quellenpriorisierung und KI-gestützter Variantenauswahl</figcaption>
+</figure>
+
+## Umsetzung
+
+Die praktische Durchführung der Anreicherung erfolgte über parallele API-Abfragen an DNB und LoC mit konfigurierten Rate Limits zur Schonung der Server-Ressourcen. Für DNB wurde ein Rate Limit von 1 Sekunde pro Anfrage gewählt, während für LoC aufgrund geringerer Server-Stabilität ein konservativeres Limit von 10 Sekunden angesetzt wurde. Die Gesamtdauer der Anreicherung belief sich auf etwa 33 Stunden reine API-Abfragezeit, wobei 10.780 DNB-ISBN/ISSN-Abfragen (~3 Stunden), 17.488 DNB-Titel/Autor-Abfragen (~5 Stunden), 5.856 DNB-Titel/Jahr-Abfragen (~2 Stunden) sowie 3.785 LoC-ISBN/ISSN-Abfragen (~11 Stunden) und 4.770 LoC-Titel/Autor-Abfragen (~13 Stunden) durchgeführt wurden. Um Datenverlust bei Verbindungsabbrüchen zu vermeiden, wurden Zwischenergebnisse alle 50 Abfragen persistiert.
+
+
+## Ergebnisse
+
+### Anreicherungsgewinn nach Datenfeldern
+
+Von den {{ results.vdeh_quality.total_records | large }} VDEh-Datensätzen konnten {{ results.enrichment.dnb_total | large }} ({{ results.enrichment.dnb_coverage_pct | de_num(1) }}%) über die DNB und {{ results.enrichment.loc_total | large }} ({{ results.enrichment.loc_coverage_pct | de_num(1) }}%) über die LoC erfolgreich angereichert werden. Die folgende Tabelle zeigt, wie viele Datensätze durch die Anreicherung zusätzliche Informationen erhalten haben:
+
+| Feld | VDEh-Bestand | Gewinn durch Anreicherung |
+|------|-------------:|--------------------------:|
+| Titel | {{ results.vdeh_quality.title_count | large }} | {{ results.enrichment.field_gains.title.total | large }} |
+| Autor(en) | {{ results.vdeh_quality.authors_count | large }} | {{ results.enrichment.field_gains.authors.total | large }} |
+| Erscheinungsjahr | {{ results.vdeh_quality.year_count | large }} | {{ results.enrichment.field_gains.year.total | large }} |
+| ISBN | {{ results.vdeh_quality.isbn_count | large }} | **{{ results.enrichment.field_gains.isbn.total | large }}** |
+| ISSN | {{ results.vdeh_quality.issn_count | large }} | **{{ results.enrichment.field_gains.issn.total | large }}** |
+| Seitenzahl | {{ results.vdeh_quality.pages_count | large }} | **{{ results.enrichment.field_gains.pages.total | large }}** |
+
+
+### Limitierungen und Verbesserungspotenzial
+
+Die relativ niedrigen Gewinnzahlen bei der Titel+Autor-Suche trotz {{ results.enrichment.dnb_total | large }} erfolgreicher DNB-Anfragen lassen sich auf **strukturelle Unterschiede in der Titelerfassung** zurückführen. Während die ISBN-basierte Suche zuverlässig funktioniert, scheitert die Titel-basierte Suche häufig an systematischen Diskrepanzen zwischen VDEh- und DNB-Katalogisierung:
+
+**Typische Probleme:**
+
+1. **Untertitel und Zusatzinformationen**: VDEh erfasst häufig vollständige Titel mit allen Untertiteln und Event-Informationen, während DNB nur den Haupttitel speichert.
+   - VDEh: `Korrosionskunde im Experiment. Untersuchungsverfahren, Messtechnik, Aussagen. Erweiterte Fassung eines Experimentalkurses der DECHEMA`
+   - DNB: `Korrosionskunde im Experiment`
+   - Ergebnis: Keine exakte Übereinstimmung trotz identischem Werk
+
+2. **Katalogisierungskonventionen**: Unterschiedliche Behandlung von Sonderzeichen, Bindestrichen und Formatierungen.
+   - VDEh: `¬Die¬ deutsche Roheisenindustrie 1871-1913. Eine quantitativ-historische Untersuchung`
+   - DNB: `Die deutsche Roheisenindustrie 1871 - 1913`
+   - Ergebnis: Phrasensuche findet keinen Treffer
+
+3. **False Positives**: Die konservative Fusion-Strategie verwarf insgesamt 204 DNB-Treffer (5.9% aller DNB-Titel+Autor-Treffer), da die DNB-Suchen nicht zum angefragten VDEh-Datensatz passten. Beispielsweise lieferte die DNB-Suche für "Erdöl und Kohle" fälschlich einen Artikel über Grundwasserschutz, der lediglich in einer Zeitschrift namens "Erdöl und Kohle" erschienen war. Bei Konflikten zwischen mehreren Anreicherungsquellen wurden 67% der KI-Entscheidungen zu Gunsten einer konservativen Verwerfung aller Varianten getroffen.
+
+_An dieser Stelle sehen wir ein großes Potential mit weiteren Arbeiten die Abdeckung zu verbessern und eine größere Aussagekraft zu erzielen._

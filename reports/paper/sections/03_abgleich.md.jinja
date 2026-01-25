@@ -1,0 +1,28 @@
+# Verbesserter Bestandsabgleich (mit DNB/LoC-Anreicherung)
+
+## Methodik
+
+Der Bestandsabgleich erfolgt über einen mehrstufigen Matching-Algorithmus:
+
+1. **ISBN-Matching:** Exakter Vergleich der ISBN-10/ISBN-13, zusätzlich normalisiert (ohne Bindestriche)
+2. **Titel-Fuzzy-Matching:** Textähnlichkeitsvergleich (Schwellenwert ≥ 85%)
+3. **Autor+Titel-Kombination:** Gewichtete Ähnlichkeit aus Titel (60%) und Autor (40%) mit Schwellenwert ≥ 80%
+
+Alle Strategien werden parallel angewendet; bei mehreren Matches pro Buch wird der mit höchster Konfidenz behalten (ISBN-Matches haben Priorität).
+
+## Ergebnis
+
+**Vergleich: Ohne vs. Mit Anreicherung**
+
+| | Ohne Anreicherung | Mit Anreicherung | Differenz |
+|--------|------------------:|-----------------:|----------:|
+| Matches | {{ results.comparison_v1.total_matches | large }} | {{ results.comparison_v2.total_matches | large }} | +{{ results.comparison_v2.gain_vs_v1 | large }} (+{{ results.comparison_v2.gain_pct }}%) |
+
+**Kritische Einordnung und Versuch einer Erklärung:**
+
+- Die niedrige Match-Rate ({{ results.comparison_v2.match_rate_pct | de_num(1) }}%) reflektiert die Spezialisierung des VDEh-Bestands
+- Fuzzy-Matches ({{ results.comparison_v2.fuzzy_match_pct | de_num(1) }}% der Treffer) sollten stichprobenartig validiert werden
+- Eine verbesserte Anreicherungsstrategie (z.B. zusätzliche Kataloge, OCR-basierte ISBN-Extraktion) könnte die Match-Rate weiter erhöhen
+
+
+

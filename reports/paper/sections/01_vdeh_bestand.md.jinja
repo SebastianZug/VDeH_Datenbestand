@@ -1,0 +1,36 @@
+# VDEh-Datenbestand: Ausgangssituation
+
+## Bestandsübersicht
+
+Der VDEh-Buchbestand umfasst **{{ results.vdeh_quality.total_records | large }} bibliographische Datensätze** im MARC21-Format, extrahiert aus XML-Katalogdaten.
+
+**Grundlegende Vollständigkeit:**
+
+| Metadatenfeld | Anzahl | Vollständigkeit |
+|--------------|-------:|----------------:|
+| Titel | {{ results.vdeh_quality.title_count | large }} | {{ results.vdeh_quality.title_coverage_pct | de_num(1) }}% |
+| Autor(en) | {{ results.vdeh_quality.authors_count | large }} | {{ results.vdeh_quality.authors_coverage_pct | de_num(1) }}% |
+| Erscheinungsjahr | {{ results.vdeh_quality.year_count | large }} | {{ results.vdeh_quality.year_coverage_pct | de_num(1) }}% |
+| ISBN | {{ results.vdeh_quality.isbn_count | large }} | **{{ results.vdeh_quality.isbn_coverage_pct | de_num(1) }}%** ⚠️ |
+| ISSN | {{ results.vdeh_quality.issn_count | large }} | {{ results.vdeh_quality.issn_coverage_pct | de_num(1) }}% |
+| Seitenzahl | {{ results.vdeh_quality.pages_count | large }} | **{{ results.vdeh_quality.pages_coverage_pct | de_num(1) }}%** ⚠️ |
+
+**Kritische Beobachtung:** Die geringe Abdeckung mit ISBN-Nummern ({{ results.vdeh_quality.isbn_coverage_pct | de_num(1) }}%) und Seitenzahlen ({{ results.vdeh_quality.pages_coverage_pct | de_num(1) }}%) stellt ein erhebliches Hindernis für automatische Bestandsabgleiche dar.
+
+## Sprachverteilung
+
+Die fünf häufigsten Sprachen im VDEh-Bestand:
+
+| Sprache | Anzahl | Anteil |
+|---------|-------:|-------:|
+{% for lang_code, data in results.vdeh_quality.top_languages %}
+| {{ data.name }} ({{ lang_code }}) | {{ data.count | large }} | {{ data.percentage | de_num(1) }}% |
+{% endfor %}
+
+Die Sprachverteilung zeigt eine **Dominanz deutscher und englischer Literatur** ({{ (results.vdeh_quality.top_languages[0][1].percentage + results.vdeh_quality.top_languages[1][1].percentage) | de_num(1) }}%), was die Wahl von DNB (Deutsche Nationalbibliothek) und LoC (Library of Congress) als Anreicherungsquellen motiviert.
+
+## Datenqualitätsprobleme
+
+Eine detaillierte Analyse identifizierte erhebliche Qualitätsprobleme insbesondere bei der ISBN-Validierung und dem Seitenzahl-Format. Bei den ISBN-Nummern wurden {{ results.vdeh_quality.isbn_issues.concatenated | default(116) }} Fälle konkatenierter ISBNs festgestellt (z.B. `"978316148410097834567890123"`), {{ results.vdeh_quality.isbn_issues.invalid_checksum | default(93) }} Fälle mit ungültigen Prüfziffern sowie diverse Formatierungsfehler. Darüber hinaus zeigten sich bei den Seitenzahl-Angaben inkonsistente Formate wie `"188 S. :"` oder `"XI, 137, A35, B21 S. :"`, die eine Regex-Extraktion zur Normalisierung erforderlich machen.
+
+*Vor dem Hintergrund großer Lücken im Metadatenbestand sind **Datenanreicherungen** durch Abgleiche mit externen Katalogen unerlässlich, um die Forschungsfragen zu adressieren.*

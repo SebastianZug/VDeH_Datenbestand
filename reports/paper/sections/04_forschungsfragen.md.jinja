@@ -1,0 +1,37 @@
+# Forschungsfragen: Versuch von Antworten
+
+## Frage 1: Bestandsüberschneidung und Reduktion
+
+**Wie viele Bücher der VDEh-Sammlung sind bereits im Bestand der UB TU Bergakademie Freiberg vorhanden?**
+
+**Antwort:** Mindestens **{{ results.comparison_v2.total_matches | large }} Bücher ({{ results.comparison_v2.match_rate_pct | de_num(2) }}% des VDEh-Bestandes)** könnten als Dubletten aussortiert werden. Dabei erfolgten  **{{ results.comparison_v2.isbn_matches | large }} Matches** über exakte ISBN-Übereinstimmung (höchste Konfidenz). **{{ results.comparison_v2.fuzzy_matches | large }} Matches** wurden über Titel+Autor Fuzzy-Matching (validiert mit 85%/80% Thresholds)
+
+Diese Bücher könnten unmittelbar aussortiert werden. Die Autoren gehen davon aus, dass diese Zahl noch weiter steigen wird, wenn weitere Metadatenfelder (z.B. Verlag, Erscheinungsjahr) in den Matching-Prozess einbezogen werden. 
+
+## Frage 2: Digitalisierungsaufwand
+
+![Verteilung der Seitenzahlen im VDEh-Bestand](figures/seitenzahlen_histogramm.png)
+
+**Wie viele Seiten wären zu scannen, wenn eine vollständige Digitalisierung der nicht in der UB vorhandenen Bücher vorgenommen werden soll?**
+
+✅ **Antwort:** **~{{ (results.comparison_v2.pages_to_scan / 1000000) | de_num(1) }} Millionen Seiten** (Hochrechnung)
+
+Zur Abschätzung des Digitalisierungsaufwands wurde die Verteilung der Seitenzahlen im VDEh-Bestand analysiert. Von den {{ results.vdeh_quality.total_records | large }} Datensätzen verfügen {{ results.vdeh_quality.pages_count | large }} ({{ results.vdeh_quality.pages_coverage_pct | de_num(1) }}%) über Seitenzahlenangaben. Die Verteilung zeigt eine stark rechtsschiefe Form mit einem Median von {{ results.vdeh_quality.avg_pages }} Seiten pro Werk.
+
+Ausgehend von den bekannten Seitenzahlen wird eine Hochrechnung für die nicht-gematchten Bücher vorgenommen: `{{ results.comparison_v2.books_to_digitize | large }} Bücher × {{ results.vdeh_quality.avg_pages | large }} Seiten/Buch = {{ results.comparison_v2.pages_to_scan | large }} Seiten`. Das Ganze ist aber eine grobe Schätzung, da insbesondere die Zeitschriften und Sammelbände im VDEh-Bestand tendenziell höhere Seitenzahlen aufweisen könnten.
+
+Vor dem Hintergrund, dass Hersteller von Digitalisierungssystemen eine Leistung von ca. 20.000 Seiten pro Arbeitstag angeben, würde die Digitalisierung des gesamten VDEh-Bestandes unter perfekten Bedingungen mindestens 2 Jahre in Anspruch nehmen.
+
+# Ziele für ein mögliches Projekt (3-Jahres-Förderung)
+
+Das Projekt verbindet Bibliothekswissenschaft, Informatik, der  Montangeschichte aber auch der metallurgischen Fachdiziplinen zu einem interdisziplinären Vorhaben, das hervorragend zum Profil der TU Bergakademie Freiberg passt. Die historische Spezialbibliothek des VDEh ergänzt die montanwissenschaftlichen Sammlungen der UB und schafft gemeinsam eine einzigartige Forschungsinfrastruktur für Bergbau-, Hütten- und Materialwissenschaften. Die entwickelten Methoden und Werkzeuge sind auf andere historische Fachbestände übertragbar und stehen als Open-Source-Lösungen der wissenschaftlichen Community zur Nachnutzung zur Verfügung.
+
+| AP | Thema | Fokus | Disziplinen |
+|----|-------|-------|-------------|
+| 1 | Bestandsanalyse & Planung | Priorisierung, Mengengerüst | Bibliothekswissenschaft, Montangeschichte, Metallurgie |
+| 2 | Digitalisierung & OCR | Scan-Pipeline, Texterkennung | Informatik, Digital Humanities |
+| 3 | Metadaten & Normdaten | Anreicherung, Semantic Web | Informationswissenschaft, NLP |
+| 4 | RAG & Erschließung | KI-Suche, Fachrecherche | Data Science, Maschinelles Lernen, Metallurgie |
+| 5 | Analyse & Nachnutzung | Visualisierung, Open Access | Wissenschaftsgeschichte, Bibliothekswesen |
+
+In die umfangreichen Arbeiten zur Handhabung der Buchbestände über das Aussortieren der Dubletten bis hin zur Digitalisierung der Werke und das Training der KIs werden Studierende der TU Bergakademie Freiberg eingebunden. Dies fördert nicht nur die praktische Ausbildung, sondern stärkt auch das Bewusstsein für die Bedeutung historischer Fachliteratur in den Ingenieurwissenschaften.

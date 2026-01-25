@@ -133,7 +133,6 @@ secrets.yaml
 .secrets
 
 # Export-Verzeichnisse
-reports/
 output/
 results/
 
