@@ -1,22 +1,19 @@
+# Der VDEh-Bestand der UB Freiberg
+### Eine datengetriebene Analyse
+
+**Autoren:** Sebastian Zug (Fak. 1), Oliver Löwe (UB Freiberg)
+**Institution:** TU Bergakademie Freiberg
+**Datum:** 2026-01-25
+
 ---
-title: "Der VDEh-Bestand der UB Freiberg"
-subtitle: "Eine datengetriebene Analyse"
-author:
-  - Sebastian Zug (Fak. 1), Oliver Löwe (UB Freiberg)
-institute:
-  - TU Bergakademie Freiberg
-date: "2026-01-25"
-abstract: |
-  Dieser Bericht fasst die Analyse des Bestandskataloges der VDEh-Bibliothek zusammen und evaluiert die Überdeckung des Bestandes mit der UB Freiberg. Des weiteren erfolgt eine Abschätzung der Seitenzahlen, die bei einer vollständig digitalen Erfassung gescannt werden müssten. Dafür war es notwendig, den VDEh-Bestand mit externen Katalogen (Deutsche Nationalbibliothek, Library of Congress) abzugleichen und die Metadaten mit Hilfe von KI-gestützten Methoden anzureichern. Die Ergebnisse zeigen, dass durch die Anreicherung eine signifikante Verbesserung der Abdeckungsrate erreicht werden konnte. Abschließend werden die gewonnenen Erkenntnisse im Hinblick auf die Forschungsfragen diskutiert.
-  
-  Die zugehörige Implementierung ist als Open Source auf [Github](https://github.com/SebastianZug/VDeH_Datenbestand) verfügbar. Die Implementierung der Pipeline und des Berichtgenerators erfolgte unter Verwendung von Claude.ai.
-keywords:
-  - "Bibliotheksbestand"
-  - "Datenanreicherung"
-  - "DNB"
-  - "LoC"
-  - "KI-Fusion"
-lang: de-DE
+
+**Abstract:**
+
+> Dieser Bericht fasst die Analyse des Bestandskataloges der VDEh-Bibliothek zusammen und evaluiert die Überdeckung des Bestandes mit der UB Freiberg. Des weiteren erfolgt eine Abschätzung der Seitenzahlen, die bei einer vollständig digitalen Erfassung gescannt werden müssten. Dafür war es notwendig, den VDEh-Bestand mit externen Katalogen (Deutsche Nationalbibliothek, Library of Congress) abzugleichen und die Metadaten mit Hilfe von KI-gestützten Methoden anzureichern. Die Ergebnisse zeigen, dass durch die Anreicherung eine signifikante Verbesserung der Abdeckungsrate erreicht werden konnte. Abschließend werden die gewonnenen Erkenntnisse im Hinblick auf die Forschungsfragen diskutiert.
+> Die zugehörige Implementierung ist als Open Source auf [Github](https://github.com/SebastianZug/VDeH_Datenbestand) verfügbar. Die Implementierung der Pipeline und des Berichtgenerators erfolgte unter Verwendung von Claude.ai.
+
+**Schlagwörter:** Bibliotheksbestand, Datenanreicherung, DNB, LoC, KI-Fusion
+
 ---
 
 
@@ -261,7 +258,7 @@ Ausgehend von den bekannten Seitenzahlen wird eine Hochrechnung für die nicht-g
 
 Vor dem Hintergrund, dass Hersteller von Digitalisierungssystemen eine Leistung von ca. 20.000 Seiten pro Arbeitstag angeben, würde die Digitalisierung des gesamten VDEh-Bestandes unter perfekten Bedingungen mindestens 2 Jahre in Anspruch nehmen.
 
-# Ziele für ein mögliches Projekt (3-Jahres-Förderung)
+# Ziele für ein mögliches Projekt
 
 Das Projekt verbindet Bibliothekswissenschaft, Informatik, der  Montangeschichte aber auch der metallurgischen Fachdiziplinen zu einem interdisziplinären Vorhaben, das hervorragend zum Profil der TU Bergakademie Freiberg passt. Die historische Spezialbibliothek des VDEh ergänzt die montanwissenschaftlichen Sammlungen der UB und schafft gemeinsam eine einzigartige Forschungsinfrastruktur für Bergbau-, Hütten- und Materialwissenschaften. Die entwickelten Methoden und Werkzeuge sind auf andere historische Fachbestände übertragbar und stehen als Open-Source-Lösungen der wissenschaftlichen Community zur Nachnutzung zur Verfügung.
 

@@ -108,12 +108,13 @@ class ReportBuilder:
             logger.error(f"Fehler beim Rendern von {section_name}: {e}", exc_info=True)
             return f"\n<!-- Fehler beim Rendern von {section_name}: {e} -->\n"
 
-    def build_full_report(self, section_order: List[str] = None) -> str:
+    def build_full_report(self, section_order: List[str] = None, github_format: bool = False) -> str:
         """
         Assembliert alle Sektionen zu einem vollständigen Report.
 
         Args:
             section_order: Liste der Sektionsnamen in Reihenfolge
+            github_format: Wenn True, wird GitHub-kompatibles Markdown generiert
 
         Returns:
             Vollständiger Report-Inhalt
@@ -138,7 +139,7 @@ class ReportBuilder:
         logger.info("Baue vollständigen Report...")
 
         # Frontmatter hinzufügen
-        report_parts = [self._build_frontmatter()]
+        report_parts = [self._build_frontmatter(github_format=github_format)]
 
         # Abstract hinzufügen (falls vorhanden)
         abstract_template = self.template_dir / '01_abstract.md.jinja'
@@ -172,18 +173,25 @@ class ReportBuilder:
 
         return full_report
 
-    def _build_frontmatter(self) -> str:
+    def _build_frontmatter(self, github_format: bool = False) -> str:
         """
-        Generiert Report-Frontmatter (Titel, Autoren, etc.) im YAML-Format für Pandoc.
+        Generiert Report-Frontmatter (Titel, Autoren, etc.).
+
+        Args:
+            github_format: Wenn True, wird GitHub-kompatibles Markdown generiert,
+                          sonst YAML-Format für Pandoc.
 
         Returns:
-            Frontmatter-Markdown mit YAML-Metadaten-Block
+            Frontmatter-Markdown
         """
         report_config = self.config.get('report', {})
         title = report_config.get('title', 'Untitled Report')
         subtitle = report_config.get('subtitle', '')
         authors = report_config.get('authors', [])
         metadata = report_config.get('metadata', {})
+
+        if github_format:
+            return self._build_github_header(title, subtitle, authors, metadata, report_config)
 
         # YAML Frontmatter für Pandoc erstellen
         yaml_lines = [
@@ -238,16 +246,72 @@ class ReportBuilder:
 
         return "\n".join(yaml_lines)
 
-    def export_markdown(self, output_path: str, content: str = None):
+    def _build_github_header(self, title: str, subtitle: str, authors: list,
+                              metadata: dict, report_config: dict) -> str:
+        """
+        Generiert GitHub-kompatiblen Markdown-Header statt YAML-Frontmatter.
+
+        Returns:
+            Markdown-Header für GitHub-Rendering
+        """
+        lines = []
+
+        # Titel und Untertitel
+        lines.append(f"# {title}")
+        if subtitle:
+            lines.append(f"### {subtitle}")
+        lines.append("")
+
+        # Autoren und Datum
+        author_names = [a.get('name', '') for a in authors]
+        affiliations = [a.get('affiliation', '') for a in authors if a.get('affiliation')]
+
+        if author_names:
+            lines.append(f"**Autoren:** {', '.join(author_names)}")
+        if affiliations:
+            lines.append(f"**Institution:** {', '.join(set(affiliations))}")
+
+        date = metadata.get('date', '')
+        if date:
+            lines.append(f"**Datum:** {date}")
+
+        lines.append("")
+
+        # Abstract als Blockquote
+        abstract_text = report_config.get('abstract', None)
+        if abstract_text:
+            lines.append("---")
+            lines.append("")
+            lines.append("**Abstract:**")
+            lines.append("")
+            for para in abstract_text.strip().split('\n\n'):
+                lines.append(f"> {para.strip()}")
+            lines.append("")
+
+        # Keywords
+        if 'keywords' in metadata:
+            keywords = metadata['keywords']
+            lines.append(f"**Schlagwörter:** {', '.join(keywords)}")
+            lines.append("")
+
+        lines.append("---")
+        lines.append("")
+
+        return "\n".join(lines)
+
+    def export_markdown(self, output_path: str, content: str = None,
+                         section_order: List[str] = None, github_format: bool = True):
         """
         Exportiert Report als Markdown-Datei.
 
         Args:
             output_path: Pfad zur Output-Datei
             content: Report-Inhalt (falls None, wird vollständiger Report gebaut)
+            section_order: Liste der Sektionsnamen in Reihenfolge
+            github_format: Wenn True, wird GitHub-kompatibles Markdown generiert (Standard: True)
         """
         if content is None:
-            content = self.build_full_report()
+            content = self.build_full_report(section_order=section_order, github_format=github_format)
 
         output_file = Path(output_path)
         output_file.parent.mkdir(parents=True, exist_ok=True)

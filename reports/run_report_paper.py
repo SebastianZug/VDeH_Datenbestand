@@ -142,21 +142,21 @@ def main():
         '04_forschungsfragen'
     ]
 
-    # Build report
-    content = builder.build_full_report(section_order=section_order)
-
     # Export - use descriptive filename for GitHub
     report_name = 'VDEH_Bestandsanalyse'
 
+    # Markdown: GitHub-Format (ohne YAML-Frontmatter)
     if not args.pdf_only:
         md_path = output_dir / f'{report_name}.md'
-        logger.info(f"   → Markdown: {md_path}")
-        builder.export_markdown(str(md_path), content)
+        logger.info(f"   → Markdown (GitHub-Format): {md_path}")
+        builder.export_markdown(str(md_path), section_order=section_order, github_format=True)
 
+    # PDF: Pandoc/YAML-Format
     pdf_path = output_dir / f'{report_name}.pdf'
     logger.info(f"   → PDF: {pdf_path}")
     template = config['report']['output']['template']
-    builder.export_pdf(str(pdf_path), content, template=template)
+    pdf_content = builder.build_full_report(section_order=section_order, github_format=False)
+    builder.export_pdf(str(pdf_path), pdf_content, template=template)
 
     logger.info("\n" + "="*70)
     logger.info("✅ REPORT ERFOLGREICH GENERIERT")
