@@ -12,28 +12,19 @@ Die Anreicherung erfolgt, wie in nachfolgender Grafik gezeigt, mit einer dreistu
 
 + ID-basierte Suche (ISBN/ISSN)
 + Titel + Autor Suche mit vierstufiger Fallback-Logik
-
-```{=latex}
-\begin{enumerate}
-    \item Exakter Titel + Autor: \texttt{tit=\char34 Exact Title\char34{} AND per=Author}
-    \item Titel-Wörter + Autor: \texttt{tit=Title Words AND per=Author}
-    \item Exakter Titel: \texttt{tit=\char34 Exact Title\char34}
-    \item Titel-Wörter: \texttt{tit=Title Words}
-\end{enumerate}
-```
+  1. Exakter Titel + Autor: `tit="Exact Title" AND per=Author`
+  2. Titel-Wörter + Autor: `tit=Title Words AND per=Author`
+  3. Exakter Titel: `tit="Exact Title"`
+  4. Titel-Wörter: `tit=Title Words`
 
 + Titel + Jahr mit Similarity-Validierung
-
-```{=latex}
-\begin{enumerate}
-    \item Exakter Titel + Jahr: \texttt{tit=\char34 Exact Title\char34{} AND date=Year}
-    \item Titel-Wörter + Jahr: \texttt{tit=Title Words AND date=Year}
-\end{enumerate}
-```
+  1. Exakter Titel + Jahr: `tit="Exact Title" AND date=Year`
+  2. Titel-Wörter + Jahr: `tit=Title Words AND date=Year`
 
 Bei mehreren Anreicherungsvarianten (z.B. DNB-ID, DNB-TA, LoC-ID) entscheidet ein Large Language Model (LLM) über die finale Auswahl. Zum Einsatz kommt das lokal betriebene Modell Ollama llama3.3:70b, das neben den bibliografischen Kerndaten (Titel, Autor, Erscheinungsjahr) aus dem VDEh-Bestand und den jeweiligen Anreicherungsquellen auch eine strukturierte Konflikt- und Bestätigungsanalyse erhält. Die Entscheidungslogik priorisiert dabei Titel und Autoren als dominierende Kriterien, während Jahresabweichungen von ±2 Jahren toleriert werden. Bei mehreren gleichwertigen Varianten bevorzugt das Modell ID-basierte Treffer, während bei klaren Widersprüchen zwischen den Quellen eine konservative Strategie verfolgt wird und alle Varianten verworfen werden. Eine nachgelagerte String-Normalisierung reduziert die Konflikt-Rate nachweislich von 58% auf 29%.
 
-<figure>
+*Abbildung: Ablauf der dreistufigen Anreicherungsstrategie mit sprachbasierter Quellenpriorisierung und KI-gestützter Variantenauswahl*
+
 ```mermaid
 flowchart TB
     Start([VDEh Record]) --> Lang{Sprache?}
@@ -46,7 +37,7 @@ flowchart TB
     LoC_Prio --> S1
     Both --> S1
 
-    subgraph "Suchstrategien (DNB/LoC parallel)"
+    subgraph Suchstrategien
         S1[Strategie 1: ISBN/ISSN-Suche]
         S1 -->|Gefunden| Extract1[MARC21 Extraktion]
         S1 -->|Nicht gefunden| S2
@@ -67,26 +58,18 @@ flowchart TB
     Merge --> Variants{Anzahl Varianten?}
 
     Variants -->|0| KeepVDEh[VDEh beibehalten]
-    Variants -->|1 DNB oder LoC| AutoSelect[Auto-Select beste Variante]
-    Variants -->|2+ Varianten| AI[KI-Fusion<br/>Ollama llama3.3:70b]
+    Variants -->|1| AutoSelect[Auto-Select beste Variante]
+    Variants -->|2+| AI[KI-Fusion Ollama]
 
     AI --> Decision{KI-Entscheidung}
-    Decision -->|Variante wählen| Normalize[String-Normalisierung]
-    Decision -->|Keine passend| Reject[❌ Alle verwerfen]
+    Decision -->|Variante| Normalize[String-Normalisierung]
+    Decision -->|Keine| Reject[Alle verwerfen]
 
     AutoSelect --> Normalize
     Normalize --> Final([Angereichertes Record])
     KeepVDEh --> Final
     Reject --> Final
-
-    style S1 fill:#e3f2fd
-    style S2 fill:#e3f2fd
-    style S3 fill:#e3f2fd
-    style AI fill:#fff9c4
-    style Final fill:#c8e6c9
 ```
-<figcaption>Abbildung: Ablauf der dreistufigen Anreicherungsstrategie mit sprachbasierter Quellenpriorisierung und KI-gestützter Variantenauswahl</figcaption>
-</figure>
 
 ## Umsetzung
 
